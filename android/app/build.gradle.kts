@@ -3,17 +3,17 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
-
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+if (!keystorePropertiesFile.exists()) {
+    throw GradleException("android/key.properties not found")
 }
+
+keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 
 android {
     namespace = "hassadi.neonbreaker.pro"
@@ -27,24 +27,27 @@ android {
 
     defaultConfig {
         applicationId = "hassadi.neonbreaker.pro"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias") ?: throw GradleException("Missing keyAlias in key.properties")
-            keyPassword = keystoreProperties.getProperty("keyPassword") ?: throw GradleException("Missing keyPassword in key.properties")
-            storeFile = file(keystoreProperties.getProperty("storeFile") ?: throw GradleException("Missing storeFile in key.properties"))
-            storePassword = keystoreProperties.getProperty("storePassword") ?: throw GradleException("Missing storePassword in key.properties")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+                ?: throw GradleException("keyAlias missing")
+
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+                ?: throw GradleException("keyPassword missing")
+
+            storePassword = keystoreProperties.getProperty("storePassword")
+                ?: throw GradleException("storePassword missing")
+
+            storeFile = rootProject.file(
+                keystoreProperties.getProperty("storeFile")
+                    ?: throw GradleException("storeFile missing")
+            )
         }
     }
 
