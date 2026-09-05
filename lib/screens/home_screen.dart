@@ -40,92 +40,104 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x6639F4FF),
-                          blurRadius: 30,
-                          spreadRadius: 5,
+                        Container(
+                          width: 120,
+                          height: 120,
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(30),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x6639F4FF),
+                                blurRadius: 30,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: const NeonAppIcon(size: 120),
                         ),
-                      ],
-                    ),
-                    child: const NeonAppIcon(size: 120),
-                  ),
 
-                  const SizedBox(height: 25),
+                        const SizedBox(height: 25),
 
-                  const Text(
-                    'NEONBREAKER',
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 3,
-                      color: Colors.white,
-                    ),
-                  ),
+                        const Text(
+                          'NEONBREAKER',
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 3,
+                            color: Colors.white,
+                          ),
+                        ),
 
-                  const Text(
-                    'PRO',
-                    style: TextStyle(
-                      color: NeonColors.cyan,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 8,
-                    ),
-                  ),
+                        const Text(
+                          'PRO',
+                          style: TextStyle(
+                            color: NeonColors.cyan,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 8,
+                          ),
+                        ),
 
-                  const SizedBox(height: 35),
+                        const SizedBox(height: 35),
 
-                  _button(context, 'PLAY', Icons.play_arrow_rounded, () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            GameScreen(save: save, level: save.bestLevel),
-                      ),
-                    );
+                        _button(
+                          context,
+                          'PLAY',
+                          Icons.play_arrow_rounded,
+                          () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GameScreen(
+                                  save: save,
+                                  level: save.bestLevel,
+                                ),
+                              ),
+                            );
 
-                    if (context.mounted) {
-                      setState(() {});
-                    }
-                  }),
+                            if (context.mounted) {
+                              setState(() {});
+                            }
+                          },
+                        ),
 
-                  const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                  _button(context, 'LEVELS', Icons.grid_view_rounded, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => LevelsScreen(save: save),
-                      ),
-                    );
-                  }),
+                        _button(context, 'LEVELS', Icons.grid_view_rounded, () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LevelsScreen(save: save),
+                            ),
+                          );
+                        }),
 
-                  const SizedBox(height: 12),
+                        const SizedBox(height: 12),
 
-                  _button(context, 'SETTINGS', Icons.settings_rounded, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SettingsScreen(save: save),
-                      ),
-                    );
-                  }),
+                        _button(
+                          context,
+                          'SETTINGS',
+                          Icons.settings_rounded,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SettingsScreen(save: save),
+                              ),
+                            );
+                          },
+                        ),
 
-                  const SizedBox(height: 25),
+                        const SizedBox(height: 25),
 
-                  Text(
-                    'BEST ${save.highScore}',
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                        Text(
+                          'BEST ${save.highScore}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ],
                     ),
                   ),

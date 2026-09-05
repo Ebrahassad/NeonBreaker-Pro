@@ -1,4 +1,4 @@
-package com.neonbreaker.pro
+package hassadi.neonbreaker.pro
 
 import io.flutter.embedding.android.FlutterActivity
 

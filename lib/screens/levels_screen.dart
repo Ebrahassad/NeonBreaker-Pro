@@ -143,28 +143,28 @@ class _LevelsScreenState extends State<LevelsScreen> {
           ),
           Expanded(
             child: GridView.builder(
-        padding: const EdgeInsets.all(18),
-        itemCount: 50,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemBuilder: (context, index) {
-          final level = index + 1;
-          final unlocked = level <= bestLevel;
-          final stars = save.starsForLevel(level);
-          final bestScore = save.bestScoreForLevel(level);
+              padding: const EdgeInsets.all(18),
+              itemCount: 50,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemBuilder: (context, index) {
+                final level = index + 1;
+                final unlocked = level <= bestLevel;
+                final stars = save.starsForLevel(level);
+                final bestScore = save.bestScoreForLevel(level);
 
-          return _levelCard(
-            level: level,
-            unlocked: unlocked,
-            stars: stars,
-            bestScore: bestScore,
-          );
-        },
-      ),
-    ),
+                return _levelCard(
+                  level: level,
+                  unlocked: unlocked,
+                  stars: stars,
+                  bestScore: bestScore,
+                );
+              },
+            ),
+          ),
           const AdBanner(),
         ],
       ),

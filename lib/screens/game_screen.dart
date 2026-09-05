@@ -828,8 +828,6 @@ class _GameScreenState extends State<GameScreen>
     widget.save.saveLevel(widget.level + 1);
   }
 
-
-
   void _impact(double x, double y) {
     _addSparks(x, y, 3);
   }
@@ -848,7 +846,7 @@ class _GameScreenState extends State<GameScreen>
           life: .25 + _random.nextDouble() * .35,
           maxLife: .6,
         ),
-);
+      );
     }
 
     if (_sparks.length > 350) {
