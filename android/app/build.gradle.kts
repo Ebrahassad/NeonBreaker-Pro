@@ -5,39 +5,33 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Official signing is OPTIONAL at the Gradle-script level: it's only
+// required when key.properties actually exists (created from secrets
+// in release.yml). Plain CI builds (android.yml) that don't create it
+// still build fine, just debug-signed.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
+val hasOfficialSigning = keystorePropertiesFile.exists()
 
-if (!keystorePropertiesFile.exists()) {
-    throw GradleException(
-        "android/key.properties missing"
-    )
+if (hasOfficialSigning) {
+    keystorePropertiesFile.inputStream().use { input ->
+        keystoreProperties.load(input)
+    }
 }
 
-keystorePropertiesFile.inputStream().use { input ->
-    keystoreProperties.load(input)
-}
+val releaseKeystore = rootProject.file("keystore/neonbreaker-release.jks")
 
-val releaseKeystore = rootProject.file(
-    "keystore/neonbreaker-release.jks"
-)
+val releaseStorePassword = keystoreProperties.getProperty("storePassword")
+val releaseKeyPassword = keystoreProperties.getProperty("keyPassword")
+val releaseKeyAlias = keystoreProperties.getProperty("keyAlias")
 
-val releaseStorePassword =
-    keystoreProperties.getProperty("storePassword")
-        ?: throw GradleException("storePassword missing")
-
-val releaseKeyPassword =
-    keystoreProperties.getProperty("keyPassword")
-        ?: throw GradleException("keyPassword missing")
-
-val releaseKeyAlias =
-    keystoreProperties.getProperty("keyAlias")
-        ?: throw GradleException("keyAlias missing")
-
-if (!releaseKeystore.isFile) {
-    throw GradleException(
+if (hasOfficialSigning) {
+    require(releaseStorePassword != null) { "storePassword missing" }
+    require(releaseKeyPassword != null) { "keyPassword missing" }
+    require(releaseKeyAlias != null) { "keyAlias missing" }
+    require(releaseKeystore.isFile) {
         "Release keystore not found: ${releaseKeystore.absolutePath}"
-    )
+    }
 }
 
 android {
@@ -60,17 +54,23 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            keyAlias = releaseKeyAlias
-            keyPassword = releaseKeyPassword
-            storePassword = releaseStorePassword
-            storeFile = releaseKeystore
+        if (hasOfficialSigning) {
+            create("release") {
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storePassword = releaseStorePassword
+                storeFile = releaseKeystore
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (hasOfficialSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
