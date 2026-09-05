@@ -38,92 +38,12 @@ jobs:
           grep -nE 'namespace|applicationId' android/app/build.gradle.kts
           grep -RIn "package hassadi.neonbreaker.pro" android/app/src/main || true
 
-      - name: Restore official signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          set -e
-
-          test -n "$KEYSTORE_BASE64"
-
-          mkdir -p android/keystore
-
-          printf '%s' "$KEYSTORE_BASE64" \
-            | base64 --decode \
-            > android/keystore/neonbreaker-release.jks
-
-          chmod 600 android/keystore/neonbreaker-release.jks
-
-          test -s android/keystore/neonbreaker-release.jks
-
-          echo "Keystore restored."
-
-      - name: Verify GitHub signing secrets
-        env:
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-
-          KEYSTORE="android/keystore/neonbreaker-release.jks"
-
-          test -n "$RELEASE_STORE_PASSWORD"
-          test -n "$RELEASE_KEY_PASSWORD"
-          test -n "$RELEASE_KEY_ALIAS"
-          test -s "$KEYSTORE"
-
-          echo "========== KEYSTORE SHA256 =========="
-          sha256sum "$KEYSTORE"
-
-          echo "========== KEYSTORE ENTRY =========="
-          keytool -list \
-            -keystore "$KEYSTORE" \
-            -storepass "$RELEASE_STORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            | grep -E 'Alias name|Entry type'
-
-          echo "========== REAL PRIVATE KEY TEST =========="
-
-          rm -f /tmp/neonbreaker-test.p12
-
-          keytool -importkeystore \
-            -srckeystore "$KEYSTORE" \
-            -srcstoretype JKS \
-            -srcstorepass "$RELEASE_STORE_PASSWORD" \
-            -srcalias "$RELEASE_KEY_ALIAS" \
-            -srckeypass "$RELEASE_KEY_PASSWORD" \
-            -destkeystore /tmp/neonbreaker-test.p12 \
-            -deststoretype PKCS12 \
-            -deststorepass "$RELEASE_STORE_PASSWORD" \
-            -destkeypass "$RELEASE_STORE_PASSWORD" \
-            -noprompt
-
-          test -s /tmp/neonbreaker-test.p12
-
-          echo "PRIVATE KEY PASSWORD IS VALID"
-          rm -f /tmp/neonbreaker-test.p12
-
       - name: Analyze
         run: flutter analyze
 
-
-      - name: Build official release APK
-        env:
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      - name: Build release APK
         run: |
           set -e
-
-          test -n "$RELEASE_STORE_PASSWORD"
-          test -n "$RELEASE_KEY_PASSWORD"
-          test -n "$RELEASE_KEY_ALIAS"
-
-          test -s android/keystore/neonbreaker-release.jks
-
-          echo "Building with official signing configuration..."
-
           flutter clean
           flutter pub get
           flutter build apk --release
@@ -143,10 +63,6 @@ jobs:
           echo "========== SHA256 =========="
           sha256sum "$APK"
 
-          echo
-          echo "========== SIGNATURE =========="
-          apksigner verify --verbose --print-certs "$APK"
-
       - name: Prepare release files
         run: |
           set -e
@@ -161,6 +77,9 @@ jobs:
             release/NeonBreaker-Pro-official.apk \
             > release/SHA256SUMS.txt
 
+          echo "========== RELEASE FILES =========="
+          ls -lh release/
+          echo
           cat release/SHA256SUMS.txt
 
       - name: Create GitHub Release
