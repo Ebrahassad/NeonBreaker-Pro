@@ -70,7 +70,7 @@ jobs:
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEY_PASSWORD
           keyAlias=$KEY_ALIAS
-          storeFile=keystore/neonbreaker-release.jks
+          storeFile=../keystore/neonbreaker-release.jks
           EOF2
 
           echo "Signing properties created."
