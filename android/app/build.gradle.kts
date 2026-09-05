@@ -1,32 +1,21 @@
-import java.io.File
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-import java.util.Properties
-
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 
 if (!keystorePropertiesFile.exists()) {
-    throw GradleException("android/key.properties missing")
+    throw GradleException(
+        "android/key.properties missing"
+    )
 }
 
-keystorePropertiesFile.inputStream().use {
-    keystoreProperties.load(it)
-}
-
-val keystoreProperties = java.util.Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
-
-if (!keystorePropertiesFile.exists()) {
-    throw GradleException("android/key.properties missing")
-}
-
-keystorePropertiesFile.inputStream().use {
-    keystoreProperties.load(it)
+keystorePropertiesFile.inputStream().use { input ->
+    keystoreProperties.load(input)
 }
 
 val releaseKeystore = rootProject.file(
@@ -45,7 +34,7 @@ val releaseKeyAlias =
     keystoreProperties.getProperty("keyAlias")
         ?: throw GradleException("keyAlias missing")
 
-if (!releaseKeystore.exists()) {
+if (!releaseKeystore.isFile) {
     throw GradleException(
         "Release keystore not found: ${releaseKeystore.absolutePath}"
     )
@@ -53,6 +42,7 @@ if (!releaseKeystore.exists()) {
 
 android {
     namespace = "hassadi.neonbreaker.pro"
+
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
