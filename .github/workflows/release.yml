@@ -29,26 +29,94 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter pub get
-        run: flutter pub get
+      - name: Restore official signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -e
+
+          test -n "$KEYSTORE_BASE64"
+
+          mkdir -p android/keystore
+
+          printf '%s' "$KEYSTORE_BASE64" \
+            | base64 --decode \
+            > android/keystore/neonbreaker-release.jks
+
+          chmod 600 android/keystore/neonbreaker-release.jks
+
+          test -s android/keystore/neonbreaker-release.jks
+
+          echo "Keystore restored successfully."
+
+      - name: Verify restored keystore
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+
+          KEYSTORE="android/keystore/neonbreaker-release.jks"
+
+          test -n "$RELEASE_STORE_PASSWORD"
+          test -n "$RELEASE_KEY_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
+          test -s "$KEYSTORE"
+
+          keytool -list \
+            -keystore "$KEYSTORE" \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            >/dev/null
+
+          keytool -list \
+            -keystore "$KEYSTORE" \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
+            -keypass "$RELEASE_KEY_PASSWORD" \
+            >/dev/null
+
+          echo "OFFICIAL KEYSTORE: OK"
+          echo "PRIVATE KEY: OK"
 
       - name: Verify package name
         run: |
           set -e
-          grep -nE 'namespace|applicationId' android/app/build.gradle.kts
-          grep -RIn "package hassadi.neonbreaker.pro" android/app/src/main || true
+
+          grep -nE 'namespace|applicationId' \
+            android/app/build.gradle.kts
+
+          grep -RIn \
+            "hassadi.neonbreaker.pro" \
+            android/app/src/main || true
+
+      - name: Flutter pub get
+        run: flutter pub get
 
       - name: Analyze
         run: flutter analyze
 
-      - name: Build release APK
+      - name: Build official signed release APK
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -e
+
+          test -n "$RELEASE_STORE_PASSWORD"
+          test -n "$RELEASE_KEY_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
+
+          test -s android/keystore/neonbreaker-release.jks
+
           flutter clean
           flutter pub get
+
           flutter build apk --release
 
-      - name: Verify APK package
+      - name: Verify official APK signature
         run: |
           set -e
 
@@ -60,10 +128,19 @@ jobs:
           ls -lh "$APK"
 
           echo
-          echo "========== SHA256 =========="
+          echo "========== APK SIGNATURE =========="
+
+          apksigner verify \
+            --verbose \
+            --print-certs \
+            "$APK"
+
+          echo
+          echo "========== APK SHA256 =========="
+
           sha256sum "$APK"
 
-      - name: Prepare release files
+      - name: Prepare official release
         run: |
           set -e
 
@@ -78,7 +155,9 @@ jobs:
             > release/SHA256SUMS.txt
 
           echo "========== RELEASE FILES =========="
+
           ls -lh release/
+
           echo
           cat release/SHA256SUMS.txt
 
