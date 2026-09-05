@@ -52,24 +52,33 @@ jobs:
       - name: Verify official keystore
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -e
 
           test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_PASSWORD"
           test -n "$KEY_ALIAS"
 
           KEYSTORE="android/keystore/neonbreaker-release.jks"
 
           test -s "$KEYSTORE"
 
-          keytool -list \
-            -keystore "$KEYSTORE" \
-            -alias "$KEY_ALIAS" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            >/dev/null
+          # Real check: actually recover the private key, not just open the file.
+          keytool -importkeystore \
+            -srckeystore "$KEYSTORE" \
+            -srcalias "$KEY_ALIAS" \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srckeypass "$KEY_PASSWORD" \
+            -destkeystore /tmp/verify.jks \
+            -destalias "$KEY_ALIAS" \
+            -deststorepass verify123 \
+            -destkeypass verify123
 
-          echo "OFFICIAL KEYSTORE: OK"
+          rm -f /tmp/verify.jks
+
+          echo "OFFICIAL KEYSTORE: OK — private key recovers correctly"
           echo "OFFICIAL ALIAS: OK"
 
       - name: Verify package
@@ -96,7 +105,7 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Create key.properties and build signed APK
+      - name: Create key.properties and build signed release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
