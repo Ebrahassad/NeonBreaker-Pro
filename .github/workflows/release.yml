@@ -51,30 +51,19 @@ jobs:
 
       - name: Verify restored keystore
         env:
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -e
 
           KEYSTORE="android/keystore/neonbreaker-release.jks"
 
-          test -n "$RELEASE_STORE_PASSWORD"
-          test -n "$RELEASE_KEY_PASSWORD"
-          test -n "$RELEASE_KEY_ALIAS"
           test -s "$KEYSTORE"
 
           keytool -list \
             -keystore "$KEYSTORE" \
-            -storepass "$RELEASE_STORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
             >/dev/null
 
           keytool -list \
             -keystore "$KEYSTORE" \
-            -storepass "$RELEASE_STORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" \
-            -keypass "$RELEASE_KEY_PASSWORD" \
             >/dev/null
 
           echo "OFFICIAL KEYSTORE: OK"
@@ -99,20 +88,103 @@ jobs:
 
       - name: Build official signed release APK
         env:
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -e
 
-          test -n "$RELEASE_STORE_PASSWORD"
-          test -n "$RELEASE_KEY_PASSWORD"
-          test -n "$RELEASE_KEY_ALIAS"
+          echo "========== CHECK SIGNING SECRETS =========="
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_PASSWORD"
+          test -n "$KEY_ALIAS"
+          echo "Signing secrets are present."
+
+          echo "========== CHECK KEYSTORE =========="
           test -s android/keystore/neonbreaker-release.jks
 
+          keytool -list             -keystore android/keystore/neonbreaker-release.jks             -alias "$KEY_ALIAS"             -storepass "$KEYSTORE_PASSWORD"             >/dev/null
+
+          echo "Keystore and alias verified."
+
+          echo "========== CREATE KEY.PROPERTIES =========="
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=keystore/neonbreaker-release.jks
+          EOF
+
+          chmod 600 android/key.properties
+          echo "key.properties created."
+
+          echo "========== FLUTTER BUILD =========="
           flutter clean
           flutter pub get
           flutter build apk --release
+
+      - name: Verify official APK signature
+        run: |
+          set -e
+
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+
+          test -f "$APK"
+
+          echo "========== APK =========="
+          ls -lh "$APK"
+
+          echo
+          echo "========== APK SIGNATURE =========="
+
+          apksigner verify \
+            --verbose \
+            --print-certs \
+            "$APK"
+
+          echo
+          echo "========== APK SHA256 =========="
+
+          sha256sum "$APK"
+
+      - name: Prepare official release
+        run: |
+          set -e
+
+          mkdir -p release
+
+          cp \
+            build/app/outputs/flutter-apk/app-release.apk \
+            release/NeonBreaker-Pro-official.apk
+
+          sha256sum \
+            release/NeonBreaker-Pro-official.apk \
+            > release/SHA256SUMS.txt
+
+          echo "========== RELEASE FILES =========="
+
+          ls -lh release/
+
+          echo
+          cat release/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
+          fi
+
+          gh release create "$TAG" \
+            release/NeonBreaker-Pro-official.apk \
+            release/SHA256SUMS.txt \
+            --title "NeonBreaker Pro $TAG" \
+            --generate-notes
 
       - name: Verify official APK signature
         run: |

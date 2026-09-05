@@ -5,19 +5,45 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val releaseKeystore = rootProject.file("keystore/neonbreaker-release.jks")
+import java.util.Properties
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+
+if (!keystorePropertiesFile.exists()) {
+    throw GradleException("android/key.properties missing")
+}
+
+keystorePropertiesFile.inputStream().use {
+    keystoreProperties.load(it)
+}
+
+val keystoreProperties = java.util.Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+
+if (!keystorePropertiesFile.exists()) {
+    throw GradleException("android/key.properties missing")
+}
+
+keystorePropertiesFile.inputStream().use {
+    keystoreProperties.load(it)
+}
+
+val releaseKeystore = rootProject.file(
+    "keystore/neonbreaker-release.jks"
+)
 
 val releaseStorePassword =
-    System.getenv("RELEASE_STORE_PASSWORD")
-        ?: throw GradleException("RELEASE_STORE_PASSWORD missing")
+    keystoreProperties.getProperty("storePassword")
+        ?: throw GradleException("storePassword missing")
 
 val releaseKeyPassword =
-    System.getenv("RELEASE_KEY_PASSWORD")
-        ?: throw GradleException("RELEASE_KEY_PASSWORD missing")
+    keystoreProperties.getProperty("keyPassword")
+        ?: throw GradleException("keyPassword missing")
 
 val releaseKeyAlias =
-    System.getenv("RELEASE_KEY_ALIAS")
-        ?: throw GradleException("RELEASE_KEY_ALIAS missing")
+    keystoreProperties.getProperty("keyAlias")
+        ?: throw GradleException("keyAlias missing")
 
 if (!releaseKeystore.exists()) {
     throw GradleException(
