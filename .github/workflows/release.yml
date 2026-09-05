@@ -56,80 +56,77 @@ jobs:
 
           test -s android/keystore/neonbreaker-release.jks
 
-          echo "Keystore restored successfully."
+          echo "Keystore restored."
 
-      - name: Create signing properties from GitHub Secrets
+      - name: Verify GitHub signing secrets
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          set -e
-
-          test -n "$KEYSTORE_PASSWORD"
-          test -n "$KEY_PASSWORD"
-          test -n "$KEY_ALIAS"
-
-          cat > android/key.properties <<EOF2
-storePassword=$KEYSTORE_PASSWORD
-keyPassword=$KEY_PASSWORD
-keyAlias=$KEY_ALIAS
-storeFile=android/keystore/neonbreaker-release.jks
-EOF2
-
-          chmod 600 android/key.properties
-
-          echo "key.properties created."
-
-          grep -E '^(keyAlias|storeFile)=' android/key.properties
-
-      - name: Verify signing configuration
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          set -e
+          set -euo pipefail
 
           KEYSTORE="android/keystore/neonbreaker-release.jks"
 
+          test -n "$RELEASE_STORE_PASSWORD"
+          test -n "$RELEASE_KEY_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
           test -s "$KEYSTORE"
-          test -s android/key.properties
 
-          echo "========== VERIFY STORE PASSWORD =========="
+          echo "========== KEYSTORE SHA256 =========="
+          sha256sum "$KEYSTORE"
 
+          echo "========== KEYSTORE ENTRY =========="
           keytool -list \
             -keystore "$KEYSTORE" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            >/dev/null
-
-          echo "STORE PASSWORD OK"
-
-          echo "========== VERIFY PRIVATE KEY PASSWORD =========="
-
-          keytool -list \
-            -keystore "$KEYSTORE" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            -keypass "$KEY_PASSWORD" \
-            >/dev/null
-
-          echo "KEY PASSWORD OK"
-
-          echo "========== VERIFY ALIAS =========="
-
-          keytool -list \
-            -keystore "$KEYSTORE" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" \
             | grep -E 'Alias name|Entry type'
+
+          echo "========== REAL PRIVATE KEY TEST =========="
+
+          rm -f /tmp/neonbreaker-test.p12
+
+          keytool -importkeystore \
+            -srckeystore "$KEYSTORE" \
+            -srcstoretype JKS \
+            -srcstorepass "$RELEASE_STORE_PASSWORD" \
+            -srcalias "$RELEASE_KEY_ALIAS" \
+            -srckeypass "$RELEASE_KEY_PASSWORD" \
+            -destkeystore /tmp/neonbreaker-test.p12 \
+            -deststoretype PKCS12 \
+            -deststorepass "$RELEASE_STORE_PASSWORD" \
+            -destkeypass "$RELEASE_STORE_PASSWORD" \
+            -noprompt
+
+          test -s /tmp/neonbreaker-test.p12
+
+          echo "PRIVATE KEY PASSWORD IS VALID"
+          rm -f /tmp/neonbreaker-test.p12
 
       - name: Analyze
         run: flutter analyze
 
+
       - name: Build official release APK
-        run: flutter build apk --release
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+
+          test -n "$RELEASE_STORE_PASSWORD"
+          test -n "$RELEASE_KEY_PASSWORD"
+          test -n "$RELEASE_KEY_ALIAS"
+
+          test -s android/keystore/neonbreaker-release.jks
+
+          echo "Building with official signing configuration..."
+
+          flutter clean
+          flutter pub get
+          flutter build apk --release
 
       - name: Verify APK package
         run: |
@@ -164,7 +161,6 @@ EOF2
             release/NeonBreaker-Pro-official.apk \
             > release/SHA256SUMS.txt
 
-          echo "========== RELEASE SHA256 =========="
           cat release/SHA256SUMS.txt
 
       - name: Create GitHub Release
