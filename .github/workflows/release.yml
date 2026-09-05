@@ -108,12 +108,10 @@ jobs:
           test -n "$RELEASE_STORE_PASSWORD"
           test -n "$RELEASE_KEY_PASSWORD"
           test -n "$RELEASE_KEY_ALIAS"
-
           test -s android/keystore/neonbreaker-release.jks
 
           flutter clean
           flutter pub get
-
           flutter build apk --release
 
       - name: Verify official APK signature
