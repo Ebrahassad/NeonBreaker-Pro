@@ -37,55 +37,28 @@ jobs:
           grep -nE 'namespace|applicationId' android/app/build.gradle.kts
           grep -RIn "package hassadi.neonbreaker.pro" android/app/src/main || true
 
-      - name: Restore official signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      - name: Verify signing files
         run: |
           set -e
-          test -n "$KEYSTORE_BASE64"
 
-          mkdir -p android/keystore
-
-          printf '%s' "$KEYSTORE_BASE64" \
-            | base64 --decode \
-            > android/keystore/neonbreaker-release.jks
-
-          chmod 600 android/keystore/neonbreaker-release.jks
-
+          test -s android/key.properties
           test -s android/keystore/neonbreaker-release.jks
 
-      - name: Create signing properties
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          set -e
+          echo "Signing files found."
 
-          test -n "$KEYSTORE_PASSWORD"
-          test -n "$KEY_PASSWORD"
-          test -n "$KEY_ALIAS"
-
-          cat > android/key.properties <<EOF2
-          storePassword=$KEYSTORE_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          storeFile=../keystore/neonbreaker-release.jks
-          EOF2
-
-          echo "Signing properties created."
           grep -E '^(keyAlias|storeFile)=' android/key.properties
 
       - name: Verify signing key
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -e
 
+          KEYSTORE=$(grep '^storeFile=' android/key.properties | cut -d= -f2-)
+          KEY_ALIAS=$(grep '^keyAlias=' android/key.properties | cut -d= -f2-)
+          STORE_PASSWORD=$(grep '^storePassword=' android/key.properties | cut -d= -f2-)
+
           keytool -list \
-            -keystore android/keystore/neonbreaker-release.jks \
-            -storepass "$KEYSTORE_PASSWORD" \
+            -keystore "android/$KEYSTORE" \
+            -storepass "$STORE_PASSWORD" \
             -alias "$KEY_ALIAS"
 
       - name: Analyze
