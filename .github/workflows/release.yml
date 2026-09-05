@@ -147,9 +147,17 @@ jobs:
           ls -lh "$APK"
 
           echo
+          echo "========== LOCATING apksigner =========="
+
+          APKSIGNER=$(find "$ANDROID_HOME" -name apksigner -type f 2>/dev/null | sort -V | tail -n 1)
+
+          test -n "$APKSIGNER"
+          echo "Using: $APKSIGNER"
+
+          echo
           echo "========== APK SIGNATURE =========="
 
-          apksigner verify \
+          "$APKSIGNER" verify \
             --verbose \
             --print-certs \
             "$APK"
