@@ -50,3 +50,5 @@ app.*.map.json
 # NeonBreaker official signing
 android/keystore/*.jks
 android/key.properties
+
+NeonBreaker-Pro-main-backup-*/

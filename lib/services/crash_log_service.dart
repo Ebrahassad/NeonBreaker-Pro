@@ -10,9 +10,7 @@ import 'package:flutter/services.dart';
 /// internal storage paths can vary slightly by device/user profile, so
 /// asking Android directly is the only fully reliable way.
 class CrashLogService {
-  static const MethodChannel _channel = MethodChannel(
-    'neonbreaker/crash_logs',
-  );
+  static const MethodChannel _channel = MethodChannel('neonbreaker/crash_logs');
 
   static Future<Directory?> _crashLogDir() async {
     try {

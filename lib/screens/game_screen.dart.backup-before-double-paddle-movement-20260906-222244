@@ -90,7 +90,6 @@ class _GameScreenState extends State<GameScreen>
 
   final List<Ball> _balls = [];
   final List<Brick> _bricks = [];
-  List<Brick> _savedBricks = [];
   final List<FallingPower> _powers = [];
   final List<Spark> _sparks = [];
 
@@ -108,7 +107,6 @@ class _GameScreenState extends State<GameScreen>
   double _stageEventTimer = 0;
 
   // POWER STAGE
-  int _lastPowerStageCombo = 0;
   double _powerStage = 0;
   bool _powerStageActive = false;
   double _powerStageTimer = 0;
@@ -193,7 +191,6 @@ class _GameScreenState extends State<GameScreen>
     _stageEventActive = false;
     _stageEventTimer = 0;
 
-    _lastPowerStageCombo = 0;
     _powerStage = 0;
     _powerStageActive = false;
     _powerStageTimer = 0;
@@ -215,10 +212,6 @@ class _GameScreenState extends State<GameScreen>
     _shieldTimer = 0;
     _laserTimer = 0;
     _doublePaddleTimer = 0;
-    _leftPaddleX = .18;
-    _rightPaddleX = .82;
-    _leftPaddleDirection = 1;
-    _rightPaddleDirection = -1;
 
     _paddle = .5;
 
@@ -439,7 +432,6 @@ class _GameScreenState extends State<GameScreen>
     }
 
     final dt = .016;
-    var shouldCompleteLevel = false;
 
     setState(() {
       _stageElapsed += dt;
@@ -449,13 +441,9 @@ class _GameScreenState extends State<GameScreen>
       _updateSparks(dt);
 
       if (_bricks.every((brick) => !brick.alive)) {
-        shouldCompleteLevel = true;
+        _completeLevel();
       }
     });
-
-    if (shouldCompleteLevel && mounted && !_levelClear) {
-      _completeLevel();
-    }
   }
 
   void _updateTimers(double dt) {
@@ -528,39 +516,7 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  void _updateDoublePaddles(double dt) {
-    if (!_doublePaddle) {
-      return;
-    }
-
-    const speed = .22;
-    const halfWidth = .09;
-    const minX = halfWidth;
-    const maxX = 1.0 - halfWidth;
-
-    _leftPaddleX += _leftPaddleDirection * speed * dt;
-    _rightPaddleX += _rightPaddleDirection * speed * dt;
-
-    if (_leftPaddleX <= minX) {
-      _leftPaddleX = minX;
-      _leftPaddleDirection = 1;
-    } else if (_leftPaddleX >= maxX) {
-      _leftPaddleX = maxX;
-      _leftPaddleDirection = -1;
-    }
-
-    if (_rightPaddleX <= minX) {
-      _rightPaddleX = minX;
-      _rightPaddleDirection = 1;
-    } else if (_rightPaddleX >= maxX) {
-      _rightPaddleX = maxX;
-      _rightPaddleDirection = -1;
-    }
-  }
-
   void _updateBalls(double dt) {
-    _updateDoublePaddles(dt);
-
     final speed = _speedMultiplier();
 
     for (final ball in List<Ball>.from(_balls)) {
@@ -822,19 +778,19 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
-    // POWER STAGE activates at sequential combo milestones:
-    // 12, 24, 36, 48, ...
+    // POWER STAGE is directly calculated from the current COMBO.
     //
-    // This prevents Power Stage from immediately reactivating after
-    // its timer expires while the combo is still above 12.
+    // The target combo adapts to the number of bricks in the level:
+    // small levels can reach Power Stage without requiring an
+    // unnecessarily high combo, while larger levels require more.
 
-    const comboStep = 12;
-    final nextPowerStageCombo = _lastPowerStageCombo + comboStep;
+    const targetCombo = 12;
 
-    _powerStage = ((_combo % comboStep) / comboStep * 100.0).clamp(0.0, 100.0);
+    final comboProgress = (_combo / targetCombo).clamp(0.0, 1.0);
 
-    if (_combo >= nextPowerStageCombo) {
-      _lastPowerStageCombo = nextPowerStageCombo;
+    _powerStage = comboProgress * 100.0;
+
+    if (_powerStage >= 100.0) {
       _activatePowerStage();
     }
   }
@@ -990,10 +946,10 @@ class _GameScreenState extends State<GameScreen>
 
   void _loseLife() {
     _combo = 0;
-    _lastPowerStageCombo = 0;
 
     if (_shield) {
       _shield = false;
+
       _resetBalls();
       return;
     }
@@ -1014,34 +970,15 @@ class _GameScreenState extends State<GameScreen>
     }
 
     if (_lives <= 0) {
-      _saveBrickState();
-      // Use a saved extra life before declaring game over.
-      if (widget.save.extraLives > 0) {
-        widget.save.setExtraLives(widget.save.extraLives - 1);
-        _lives = 1;
-        _resetBalls();
-        return;
-      }
-
-      _lives = 0;
       _gameOver = true;
       _controller.stop();
 
       widget.save.saveLevelScore(widget.level, _score);
+
       return;
     }
 
     _resetBalls();
-  }
-
-  void _saveBrickState() {
-    _savedBricks = _bricks
-        .where((brick) => brick.alive)
-        .map(
-          (brick) =>
-              Brick(x: brick.x, y: brick.y, type: brick.type, hp: brick.hp),
-        )
-        .toList();
   }
 
   void _resetBalls() {
@@ -1076,7 +1013,7 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  Future<void> _completeLevel() async {
+  void _completeLevel() {
     _levelClear = true;
     _controller.stop();
 
@@ -1094,21 +1031,22 @@ class _GameScreenState extends State<GameScreen>
     _score += reward.bonusScore;
 
     widget.save.saveLevelScore(widget.level, _score);
-    await widget.save.saveLevelStars(widget.level, _earnedStars);
-    await widget.save.saveLevelCombo(widget.level, _bestCombo);
+    widget.save.saveLevelStars(widget.level, _earnedStars);
+    widget.save.saveLevelCombo(widget.level, _bestCombo);
 
     // The next level requires at least 2 stars.
     // One-star completion saves the result but does NOT unlock
     // the next level. The player can use a rewarded ad to skip.
     if (_earnedStars >= 2) {
-      await widget.save.saveLevel(widget.level + 1);
+      widget.save.saveLevel(widget.level + 1);
     }
   }
 
   void _nextLevel() {
     // Two or more stars: unlock and enter the next level normally.
+    // One star: keep the level locked and offer rewarded-ad skip.
     if (_earnedStars < 2) {
-      _showOneStarUnlockDialog();
+      _watchAdToUnlockNextLevel();
       return;
     }
 
@@ -1126,120 +1064,6 @@ class _GameScreenState extends State<GameScreen>
         _enterFullscreen();
       }
     });
-  }
-
-  void _showOneStarUnlockDialog() {
-    if (!mounted || !_levelClear) return;
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: const Color(0xFF100B1C),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: NeonColors.yellow.withValues(alpha: .55),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: NeonColors.yellow.withValues(alpha: .22),
-                  blurRadius: 28,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock_rounded, color: NeonColors.yellow, size: 46),
-                const SizedBox(height: 10),
-                const Text(
-                  'تحتاج نجمتين على الأقل لفتح المرحلة',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'حصلت على نجمة واحدة. يمكنك إعادة المرحلة أو تخطي الشرط بمشاهدة إعلان.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                _resultButton(
-                  label: 'شاهد إعلان للتخطي',
-                  icon: Icons.ondemand_video_rounded,
-                  primary: true,
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    _watchAdToUnlockNextLevel();
-                  },
-                ),
-
-                const SizedBox(height: 10),
-
-                _resultButton(
-                  label: 'إعادة المرحلة',
-                  icon: Icons.replay_rounded,
-                  primary: false,
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    _restartLevel();
-                  },
-                ),
-
-                const SizedBox(height: 10),
-
-                _resultButton(
-                  label: 'خروج',
-                  icon: Icons.close_rounded,
-                  primary: false,
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                ),
-
-                const SizedBox(height: 10),
-
-                _resultButton(
-                  label: 'العودة إلى شاشة البداية',
-                  icon: Icons.home_rounded,
-                  primary: false,
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => HomeScreen(save: widget.save),
-                      ),
-                    ).then((_) {
-                      if (mounted) {
-                        _enterFullscreen();
-                      }
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   void _watchAdToUnlockNextLevel() {
@@ -1337,20 +1161,6 @@ class _GameScreenState extends State<GameScreen>
   void _watchAdToContinue() {
     if (_continueUsed) return;
 
-    if (!AdService.instance.isRewardedReady) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('الإعلان غير متوفر حاليًا'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-      }
-      return;
-    }
-
     AdService.instance.showRewarded(
       onReward: () {
         if (!mounted || !_gameOver) return;
@@ -1361,15 +1171,6 @@ class _GameScreenState extends State<GameScreen>
           _lives = 1;
         });
 
-        // Restore the exact bricks that remained when the player lost.
-        _bricks
-          ..clear()
-          ..addAll(
-            _savedBricks.map(
-              (brick) =>
-                  Brick(x: brick.x, y: brick.y, type: brick.type, hp: brick.hp),
-            ),
-          );
         _resetBalls();
         _controller.repeat();
 
@@ -1378,7 +1179,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('تم منحك محاولة أخرى'),
+                content: Text('تمت إضافة قلب إضافي بنجاح!'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1390,20 +1191,6 @@ class _GameScreenState extends State<GameScreen>
   void _watchAdForDoubleBonus() {
     if (_doubleBonusUsed) return;
 
-    if (!AdService.instance.isRewardedReady) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('الإعلان غير متوفر حاليًا'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-      }
-      return;
-    }
-
     AdService.instance.showRewarded(
       onReward: () {
         if (!mounted || !_levelClear) return;
@@ -1413,7 +1200,6 @@ class _GameScreenState extends State<GameScreen>
           _score += _bonusScore;
         });
 
-        widget.save.addExtraLives(2);
         widget.save.saveLevelScore(widget.level, _score);
 
         if (mounted) {
@@ -1421,7 +1207,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('تمت مضاعفة المكافأة! +2 ❤️'),
+                content: Text('تم منح المكافأة بنجاح!'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1987,30 +1773,19 @@ class _GameScreenState extends State<GameScreen>
             onTapDown: (details) {
               final tap = details.localPosition;
 
-              if (!_gameOver && !_levelClear) {
-                if (_paused) {
-                  final pauseCenter = Offset(
-                    _lastSize.width / 2,
-                    _lastSize.height / 2,
-                  );
+              if (tap.dy <= 78 && tap.dx >= _lastSize.width - 70) {
+                if (!_gameOver && !_levelClear) {
+                  setState(() {
+                    _paused = !_paused;
+                  });
 
-                  if ((tap - pauseCenter).distance <= 48) {
-                    setState(() {
-                      _paused = false;
-                    });
+                  if (_paused) {
+                    _controller.stop();
+                  } else {
                     _controller.repeat();
                   }
-
-                  return;
                 }
-
-                if (tap.dy <= 78 && tap.dx >= _lastSize.width - 70) {
-                  setState(() {
-                    _paused = true;
-                  });
-                  _controller.stop();
-                  return;
-                }
+                return;
               }
 
               // Result screen owns all taps while visible.
@@ -2058,8 +1833,6 @@ class _GameScreenState extends State<GameScreen>
                     shield: _shield,
                     laser: _laser,
                     doublePaddle: _doublePaddle,
-                    leftPaddleX: _leftPaddleX,
-                    rightPaddleX: _rightPaddleX,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -2132,8 +1905,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.shield,
     required this.laser,
     required this.doublePaddle,
-    required this.leftPaddleX,
-    required this.rightPaddleX,
   });
 
   final int level;
@@ -2167,8 +1938,6 @@ class _NeonGamePainter extends CustomPainter {
   final bool shield;
   final bool laser;
   final bool doublePaddle;
-  final double leftPaddleX;
-  final double rightPaddleX;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2179,6 +1948,10 @@ class _NeonGamePainter extends CustomPainter {
     _drawPaddle(canvas, size);
     _drawBalls(canvas, size);
     _drawSparks(canvas, size);
+
+    if (paused) {
+      _overlay(canvas, size, 'PAUSED', 'Tap the pause button to resume');
+    }
   }
 
   void _background(Canvas canvas, Size size) {
@@ -2207,10 +1980,52 @@ class _NeonGamePainter extends CustomPainter {
     }
   }
 
+  Color _stageAccent() {
+    switch (stageName) {
+      case 'NEON':
+        return NeonColors.cyan;
+      case 'CYBER':
+        return const Color(0xFF8A7CFF);
+      case 'REACTOR':
+        return const Color(0xFFFFB347);
+      case 'VOID':
+        return const Color(0xFFB86BFF);
+      case 'GALAXY':
+        return const Color(0xFF7DD3FC);
+      default:
+        return NeonColors.cyan;
+    }
+  }
+
   void _drawStageEvent(Canvas canvas, Size size) {
     if (!stageEventActive) {
       return;
     }
+
+    final accent = _stageAccent();
+
+    final progress = (stageEventTimer / 3.5).clamp(0.0, 1.0);
+
+    final glow = Paint()
+      ..color = accent.withValues(alpha: .10 + progress * .12)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height * .88),
+      58 + (1 - progress) * 20,
+      glow,
+    );
+
+    final border = Paint()
+      ..color = accent.withValues(alpha: .35 + progress * .35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height * .88),
+      34 + (1 - progress) * 16,
+      border,
+    );
   }
 
   void _drawStageIdentity(Canvas canvas, Size size) {
@@ -2400,16 +2215,11 @@ class _NeonGamePainter extends CustomPainter {
       NeonColors.pink,
     );
 
-    if (paused) {
-      _iconButton(
-        canvas,
-        Offset(size.width / 2, size.height / 2),
-        Icons.play_arrow,
-        large: true,
-      );
-    } else {
-      _iconButton(canvas, Offset(size.width - 30, 45), Icons.pause);
-    }
+    _iconButton(
+      canvas,
+      Offset(size.width - 30, 45),
+      paused ? Icons.play_arrow : Icons.pause,
+    );
 
     if (laser) {
       _text(canvas, 'LASER', Offset(size.width - 82, 63), 8, NeonColors.orange);
@@ -2809,8 +2619,10 @@ class _NeonGamePainter extends CustomPainter {
       final sideWidth = size.width * .18;
       final sideHeight = size.height * .030;
 
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .875);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .845);
+      final leftCenter = Offset(size.width * .18, size.height * .875);
+
+      final rightCenter = Offset(size.width * .82, size.height * .845);
+
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
@@ -3100,71 +2912,64 @@ class _NeonGamePainter extends CustomPainter {
     }
   }
 
-  void _iconButton(
-    Canvas canvas,
-    Offset center,
-    IconData icon, {
-    bool large = false,
-  }) {
-    final radius = large ? 48.0 : 17.0;
-    final ringRadius = large ? 43.0 : 15.0;
+  void _overlay(Canvas canvas, Size size, String title, String subtitle) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = Colors.black.withValues(alpha: .68),
+    );
+
+    final center = Offset(size.width / 2, size.height * .48);
 
     canvas.drawCircle(
       center,
-      radius + (large ? 14 : 5),
+      100,
       Paint()
-        ..color = NeonColors.cyan.withValues(alpha: large ? .12 : .10)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, large ? 22 : 8),
+        ..color = NeonColors.purple.withValues(alpha: .12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30),
+    );
+
+    _centerText(
+      canvas,
+      title,
+      Offset(center.dx, center.dy - 25),
+      28,
+      NeonColors.cyan,
+    );
+
+    _centerText(
+      canvas,
+      subtitle,
+      Offset(center.dx, center.dy + 18),
+      13,
+      Colors.white70,
+    );
+  }
+
+  void _iconButton(Canvas canvas, Offset center, IconData icon) {
+    canvas.drawCircle(
+      center,
+      17,
+      Paint()
+        ..color = NeonColors.purple.withValues(alpha: .3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
 
     canvas.drawCircle(
       center,
-      radius,
-      Paint()
-        ..color = NeonColors.purple.withValues(alpha: large ? .38 : .30)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, large ? 16 : 7),
-    );
-
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = const Color(0xFF090019).withValues(alpha: large ? .94 : .88),
-    );
-
-    canvas.drawCircle(
-      center,
-      ringRadius,
+      15,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = large ? 2.8 : 1.5
+        ..strokeWidth = 1.5
         ..color = NeonColors.cyan,
     );
-
-    if (large) {
-      canvas.drawCircle(
-        center,
-        ringRadius - 7,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = NeonColors.purple.withValues(alpha: .75),
-      );
-    }
 
     final painter = TextPainter(
       text: TextSpan(
         text: icon == Icons.pause ? 'Ⅱ' : '▶',
-        style: TextStyle(
+        style: const TextStyle(
           color: Colors.white,
-          fontSize: large ? 32 : 12,
+          fontSize: 12,
           fontWeight: FontWeight.w900,
-          shadows: [
-            Shadow(
-              color: NeonColors.cyan.withValues(alpha: .85),
-              blurRadius: large ? 14 : 6,
-            ),
-          ],
         ),
       ),
       textDirection: TextDirection.ltr,

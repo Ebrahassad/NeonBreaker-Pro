@@ -25,5 +25,8 @@ StageReward calculateStageReward({
 
   final bonusScore = (baseBonus + challengeBonus) * bonusMultiplier;
 
-  return StageReward(stars: stars, bonusScore: bonusScore);
+  return StageReward(
+    stars: stars,
+    bonusScore: bonusScore,
+  );
 }

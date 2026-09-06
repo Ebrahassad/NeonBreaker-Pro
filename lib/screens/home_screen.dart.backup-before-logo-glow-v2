@@ -1,0 +1,740 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../core/theme.dart';
+import '../services/crash_log_service.dart';
+import '../services/save_service.dart';
+import '../widgets/ad_banner.dart';
+import 'game_screen.dart';
+import 'levels_screen.dart';
+import 'settings_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.save});
+
+  final SaveService save;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  SaveService get save => widget.save;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForCrashLog());
+  }
+
+  Future<void> _checkForCrashLog() async {
+    final log = await CrashLogService.latestCrashLog();
+
+    if (log == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF0E0620),
+          title: const Text(
+            'تم رصد كراش سابق',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                log,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: log));
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('تم نسخ السجل')));
+                }
+              },
+              child: const Text('نسخ'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await CrashLogService.clearAll();
+
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('إغلاق وحذف السجل'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF03020A),
+      body: Stack(
+        children: [
+          const _NeonBackground(),
+
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 28, 22, 20),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildLogo(),
+
+                          const SizedBox(height: 18),
+
+                          _buildTitle(),
+
+                          const SizedBox(height: 30),
+
+                          _buildBestScore(),
+
+                          const SizedBox(height: 28),
+
+                          _mainButton(
+                            context,
+                            'PLAY',
+                            Icons.play_arrow_rounded,
+                            () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GameScreen(
+                                    save: save,
+                                    level: save.bestLevel,
+                                  ),
+                                ),
+                              );
+
+                              if (context.mounted) {
+                                setState(() {});
+                              }
+                            },
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _secondaryButton(
+                                  context,
+                                  'LEVELS',
+                                  Icons.grid_view_rounded,
+                                  () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            LevelsScreen(save: save),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _secondaryButton(
+                                  context,
+                                  'SETTINGS',
+                                  Icons.settings_rounded,
+                                  () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            SettingsScreen(save: save),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          const Text(
+                            'BREAK • BOUNCE • DESTROY',
+                            style: TextStyle(
+                              color: Colors.white30,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                const AdBanner(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogo() {
+    return Container(
+      width: 142,
+      height: 142,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(34),
+        boxShadow: [
+          BoxShadow(
+            color: NeonColors.cyan.withValues(alpha: .32),
+            blurRadius: 55,
+            spreadRadius: 12,
+          ),
+          BoxShadow(
+            color: NeonColors.pink.withValues(alpha: .20),
+            blurRadius: 70,
+            spreadRadius: 8,
+          ),
+          BoxShadow(
+            color: NeonColors.cyan.withValues(alpha: .14),
+            blurRadius: 90,
+            spreadRadius: 16,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(34),
+        child: Image.asset(
+          'assets/icon/neonbreaker_icon.png',
+          width: 142,
+          height: 142,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTitle() {
+    return Column(
+      children: [
+        ShaderMask(
+          shaderCallback: (bounds) {
+            return const LinearGradient(
+              colors: [Colors.white, Color(0xFFB8F9FF), NeonColors.cyan],
+            ).createShader(bounds);
+          },
+          child: const Text(
+            'NEONBREAKER',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 31,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2.8,
+              color: Colors.white,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 3),
+
+        const Text(
+          'PRO',
+          style: TextStyle(
+            color: NeonColors.pink,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 9,
+            shadows: [Shadow(color: NeonColors.pink, blurRadius: 12)],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBestScore() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: .035),
+        border: Border.all(color: NeonColors.cyan.withValues(alpha: .18)),
+        boxShadow: [
+          BoxShadow(
+            color: NeonColors.cyan.withValues(alpha: .06),
+            blurRadius: 18,
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.emoji_events_rounded,
+            size: 20,
+            color: Color(0xFFFFD166),
+          ),
+          const SizedBox(width: 9),
+          const Text(
+            'BEST',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '${save.highScore}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mainButton(
+    BuildContext context,
+    String text,
+    IconData icon,
+    VoidCallback action,
+  ) {
+    return SizedBox(
+      width: double.infinity,
+      height: 62,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF39ECFF), Color(0xFF14D9F5), Color(0xFF087FBE)],
+            stops: [0.0, 0.42, 1.0],
+          ),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: .55),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: NeonColors.cyan.withValues(alpha: .55),
+              blurRadius: 28,
+              spreadRadius: 2,
+            ),
+            BoxShadow(
+              color: NeonColors.cyan.withValues(alpha: .22),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 5,
+              height: 18,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: .28),
+                        Colors.white.withValues(alpha: .0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: action,
+              icon: Icon(
+                icon,
+                size: 32,
+                color: Colors.white,
+                shadows: const [
+                  Shadow(
+                    color: Color(0xAA003B55),
+                    blurRadius: 5,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              label: Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 3,
+                  shadows: [
+                    Shadow(
+                      color: Color(0x99003B55),
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                shadowColor: Colors.transparent,
+                elevation: 0,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _secondaryButton(
+    BuildContext context,
+    String text,
+    IconData icon,
+    VoidCallback action,
+  ) {
+    return SizedBox(
+      height: 55,
+      child: OutlinedButton.icon(
+        onPressed: action,
+        icon: Icon(icon, size: 20),
+        label: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: NeonColors.cyan.withValues(alpha: .40)),
+          backgroundColor: Colors.white.withValues(alpha: .025),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(17),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NeonBackground extends StatelessWidget {
+  const _NeonBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _NeonBackgroundPainter(), size: Size.infinite);
+  }
+}
+
+class _NeonBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // ------------------------------------------------------------
+    // DEEP NEON BACKGROUND
+    // ------------------------------------------------------------
+    final background = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment(0, -0.25),
+        radius: 1.25,
+        colors: [Color(0xFF1B0A35), Color(0xFF090417), Color(0xFF020208)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawRect(Offset.zero & size, background);
+
+    // ------------------------------------------------------------
+    // SOFT NEON GLOW AREAS
+    // ------------------------------------------------------------
+    final cyanGlow = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .045)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 70);
+
+    canvas.drawCircle(
+      Offset(size.width * .12, size.height * .18),
+      95,
+      cyanGlow,
+    );
+
+    final pinkGlow = Paint()
+      ..color = NeonColors.pink.withValues(alpha: .045)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 75);
+
+    canvas.drawCircle(
+      Offset(size.width * .88, size.height * .30),
+      90,
+      pinkGlow,
+    );
+
+    final purpleGlow = Paint()
+      ..color = const Color(0xFF8B5CFF).withValues(alpha: .035)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 85);
+
+    canvas.drawCircle(
+      Offset(size.width * .50, size.height * .88),
+      130,
+      purpleGlow,
+    );
+
+    // ------------------------------------------------------------
+    // VERY SUBTLE GRID
+    // ------------------------------------------------------------
+    final gridPaint = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .025)
+      ..strokeWidth = 1;
+
+    const gridSize = 44.0;
+
+    for (double x = 0; x < size.width; x += gridSize) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+
+    for (double y = 0; y < size.height; y += gridSize) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // ------------------------------------------------------------
+    // NEON BRICK SHAPES
+    // ------------------------------------------------------------
+    final brickPositions = [
+      Offset(.08, .11),
+      Offset(.83, .13),
+      Offset(.18, .31),
+      Offset(.91, .48),
+      Offset(.07, .63),
+      Offset(.87, .76),
+      Offset(.24, .89),
+      Offset(.72, .91),
+    ];
+
+    final brickColors = [
+      NeonColors.cyan,
+      NeonColors.pink,
+      NeonColors.pink,
+      NeonColors.cyan,
+      NeonColors.cyan,
+      NeonColors.pink,
+      NeonColors.cyan,
+      NeonColors.pink,
+    ];
+
+    for (int i = 0; i < brickPositions.length; i++) {
+      final p = Offset(
+        brickPositions[i].dx * size.width,
+        brickPositions[i].dy * size.height,
+      );
+
+      final color = brickColors[i];
+
+      final glow = Paint()
+        ..color = color.withValues(alpha: .10)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+
+      final rect = Rect.fromCenter(center: p, width: 25, height: 9);
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+        glow,
+      );
+
+      final brickPaint = Paint()
+        ..color = color.withValues(alpha: .20)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+        brickPaint,
+      );
+    }
+
+    // ------------------------------------------------------------
+    // NEON BALLS
+    // ------------------------------------------------------------
+    final ballPositions = [
+      Offset(.17, .20),
+      Offset(.79, .22),
+      Offset(.10, .43),
+      Offset(.92, .59),
+      Offset(.21, .70),
+      Offset(.78, .68),
+      Offset(.48, .91),
+    ];
+
+    final ballColors = [
+      NeonColors.cyan,
+      NeonColors.pink,
+      NeonColors.pink,
+      NeonColors.cyan,
+      NeonColors.cyan,
+      NeonColors.pink,
+      NeonColors.cyan,
+    ];
+
+    for (int i = 0; i < ballPositions.length; i++) {
+      final p = Offset(
+        ballPositions[i].dx * size.width,
+        ballPositions[i].dy * size.height,
+      );
+
+      final color = ballColors[i];
+
+      final ballGlow = Paint()
+        ..color = color.withValues(alpha: .16)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+
+      canvas.drawCircle(p, 7, ballGlow);
+
+      final ballPaint = Paint()..color = color.withValues(alpha: .50);
+
+      canvas.drawCircle(p, 2.6, ballPaint);
+
+      final highlight = Paint()..color = Colors.white.withValues(alpha: .65);
+
+      canvas.drawCircle(p.translate(-.9, -.9), .8, highlight);
+    }
+
+    // ------------------------------------------------------------
+    // TWINKLING STAR / PARTICLE FIELD
+    // ------------------------------------------------------------
+    final stars = [
+      Offset(.06, .08),
+      Offset(.29, .10),
+      Offset(.57, .08),
+      Offset(.94, .09),
+      Offset(.36, .19),
+      Offset(.68, .25),
+      Offset(.04, .35),
+      Offset(.52, .34),
+      Offset(.74, .39),
+      Offset(.28, .45),
+      Offset(.61, .50),
+      Offset(.03, .54),
+      Offset(.38, .58),
+      Offset(.69, .62),
+      Offset(.15, .78),
+      Offset(.52, .76),
+      Offset(.96, .83),
+      Offset(.34, .86),
+      Offset(.61, .96),
+      Offset(.90, .95),
+    ];
+
+    final starColors = [
+      NeonColors.cyan,
+      Colors.white,
+      NeonColors.pink,
+      NeonColors.cyan,
+      Colors.white,
+      NeonColors.cyan,
+      NeonColors.pink,
+      Colors.white,
+      NeonColors.cyan,
+      NeonColors.pink,
+      Colors.white,
+      NeonColors.cyan,
+      NeonColors.pink,
+      Colors.white,
+      NeonColors.cyan,
+      NeonColors.pink,
+      NeonColors.cyan,
+      Colors.white,
+      NeonColors.pink,
+      NeonColors.cyan,
+    ];
+
+    for (int i = 0; i < stars.length; i++) {
+      final p = Offset(stars[i].dx * size.width, stars[i].dy * size.height);
+
+      final color = starColors[i];
+
+      final radius = i % 4 == 0
+          ? 2.2
+          : i % 3 == 0
+          ? 1.6
+          : 1.1;
+
+      final glow = Paint()
+        ..color = color.withValues(alpha: i % 4 == 0 ? .18 : .10)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+
+      canvas.drawCircle(p, radius * 2.1, glow);
+
+      final starPaint = Paint()
+        ..color = color.withValues(alpha: i % 4 == 0 ? .72 : .38);
+
+      canvas.drawCircle(p, radius, starPaint);
+
+      if (i % 4 == 0) {
+        final crossPaint = Paint()
+          ..color = color.withValues(alpha: .22)
+          ..strokeWidth = 1;
+
+        canvas.drawLine(p.translate(-5, 0), p.translate(5, 0), crossPaint);
+
+        canvas.drawLine(p.translate(0, -5), p.translate(0, 5), crossPaint);
+      }
+    }
+
+    // ------------------------------------------------------------
+    // SUBTLE DIAGONAL NEON LINES
+    // ------------------------------------------------------------
+    final linePaint = Paint()
+      ..color = NeonColors.pink.withValues(alpha: .035)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(
+      Offset(-40, size.height * .30),
+      Offset(size.width * .30, -30),
+      linePaint,
+    );
+
+    canvas.drawLine(
+      Offset(size.width * .70, size.height + 30),
+      Offset(size.width + 40, size.height * .55),
+      linePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
+  }
+}

@@ -13,6 +13,21 @@ class SaveService {
 
   int get nextLevel => bestLevel;
 
+  // ----------------------------------------------------------
+  // EXTRA LIVES
+  // ----------------------------------------------------------
+
+  int get extraLives => _prefs.getInt('extra_lives') ?? 0;
+
+  Future<void> addExtraLives(int amount) async {
+    if (amount <= 0) return;
+    await _prefs.setInt('extra_lives', extraLives + amount);
+  }
+
+  Future<void> setExtraLives(int value) async {
+    await _prefs.setInt('extra_lives', value < 0 ? 0 : value);
+  }
+
   bool get soundEnabled => _prefs.getBool('sound') ?? true;
 
   bool get vibrationEnabled => _prefs.getBool('vibration') ?? true;
