@@ -8,6 +8,7 @@ import '../core/stages/stage_pattern.dart';
 import '../core/stages/stage_reward.dart';
 import '../services/ad_service.dart';
 import '../services/save_service.dart';
+import 'home_screen.dart';
 
 enum BrickType { normal, explosive, steel, bonus }
 
@@ -104,6 +105,12 @@ class _GameScreenState extends State<GameScreen>
   int _stageHits = 0;
   bool _stageEventActive = false;
   double _stageEventTimer = 0;
+
+  // POWER STAGE
+  double _powerStage = 0;
+  bool _powerStageActive = false;
+  double _powerStageTimer = 0;
+  double _powerStageAnnouncementTimer = 0;
   double _stageElapsed = 0;
 
   bool _paused = false;
@@ -119,7 +126,6 @@ class _GameScreenState extends State<GameScreen>
   bool _doubleBonusUsed = false;
   bool _stageMechanicActive = false;
   double _stageMechanicTimer = 0;
-  int _stageMechanicCounter = 0;
 
   double _wideTimer = 0;
   double _shieldTimer = 0;
@@ -179,6 +185,11 @@ class _GameScreenState extends State<GameScreen>
     _stageElapsed = 0;
     _stageEventActive = false;
     _stageEventTimer = 0;
+
+    _powerStage = 0;
+    _powerStageActive = false;
+    _powerStageTimer = 0;
+    _powerStageAnnouncementTimer = 0;
 
     _paused = false;
     _gameOver = false;
@@ -310,9 +321,13 @@ class _GameScreenState extends State<GameScreen>
   }
 
   double _speedMultiplier() {
-    // Gradual difficulty ramp: slightly faster on later levels, capped so
-    // it always stays comfortably playable.
-    return (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
+    final levelSpeed = (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
+
+    if (_powerStageActive) {
+      return levelSpeed * 1.35;
+    }
+
+    return levelSpeed;
   }
 
   void _tick() {
@@ -336,6 +351,24 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _updateTimers(double dt) {
+    if (_powerStageAnnouncementTimer > 0) {
+      _powerStageAnnouncementTimer -= dt;
+
+      if (_powerStageAnnouncementTimer < 0) {
+        _powerStageAnnouncementTimer = 0;
+      }
+    }
+
+    if (_powerStageActive) {
+      _powerStageTimer -= dt;
+
+      if (_powerStageTimer <= 0) {
+        _powerStageTimer = 0;
+        _powerStageActive = false;
+        _powerStage = 0;
+      }
+    }
+
     if (_stageMechanicActive) {
       _stageMechanicTimer -= dt;
 
@@ -429,7 +462,18 @@ class _GameScreenState extends State<GameScreen>
       _checkBricks(ball);
 
       if (ball.y > 1.06) {
-        ball.alive = false;
+        if (_powerStageActive) {
+          // Power Stage barrier catches the ball instead of losing a life.
+          ball.y = .865;
+          ball.vy = -ball.vy.abs();
+
+          final relative = ((ball.x - _paddle) / .5).clamp(-1.0, 1.0);
+          ball.vx = relative * .48;
+
+          _addSparks(ball.x, .87, 12);
+        } else {
+          ball.alive = false;
+        }
       }
     }
 
@@ -443,36 +487,41 @@ class _GameScreenState extends State<GameScreen>
   void _checkPaddle(Ball ball) {
     final paddleWidth = _widePaddle ? .31 : .23;
 
-    // نفس موضع المضرب المرسوم على الشاشة.
+    // نفس موضع المضرب الرئيسي والوردي المرسومين على الشاشة.
     const paddleY = .905;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
 
-    final left = _paddle - paddleWidth / 2;
-    final right = _paddle + paddleWidth / 2;
+    bool checkSinglePaddle({
+      required double centerX,
+      required double width,
+    }) {
+      final left = centerX - width / 2;
+      final right = centerX + width / 2;
 
-    final horizontalHit =
-        ball.x + ballRadius >= left && ball.x - ballRadius <= right;
+      final horizontalHit =
+          ball.x + ballRadius >= left && ball.x - ballRadius <= right;
 
-    // نتحقق من سطح المضرب نفسه، وليس منطقة بعيدة فوقه.
-    final verticalHit =
-        ball.y + ballRadius >= paddleY - paddleHalfHeight &&
-        ball.y - ballRadius <= paddleY + paddleHalfHeight;
+      final verticalHit =
+          ball.y + ballRadius >= paddleY - paddleHalfHeight &&
+          ball.y - ballRadius <= paddleY + paddleHalfHeight;
 
-    if (ball.vy > 0 && horizontalHit && verticalHit) {
-      // ضع الكرة ملاصقة مباشرة للسطح العلوي للمضرب.
+      return ball.vy > 0 && horizontalHit && verticalHit;
+    }
+
+    // المضرب الرئيسي.
+    if (checkSinglePaddle(
+      centerX: _paddle,
+      width: paddleWidth,
+    )) {
       ball.y = paddleY - ballRadius - .018;
 
-      final relative = ((ball.x - _paddle) / (paddleWidth / 2)).clamp(
-        -1.0,
-        1.0,
-      );
+      final relative =
+          ((ball.x - _paddle) / (paddleWidth / 2)).clamp(-1.0, 1.0);
 
-      // ارتداد متوسط وثابت.
       const maxHorizontal = .42;
       ball.vx = relative * maxHorizontal;
 
-      // لا تسمح بمسار شبه عمودي.
       if (ball.vx.abs() < .12) {
         ball.vx = ball.vx >= 0 ? .12 : -.12;
       }
@@ -481,6 +530,37 @@ class _GameScreenState extends State<GameScreen>
 
       _impact(ball.x, paddleY);
       _addSparks(ball.x, paddleY, 8);
+      return;
+    }
+
+    // المضرب الوردي الإضافي.
+    // مركزه هو انعكاس مركز المضرب الرئيسي أفقيًا.
+    if (_doublePaddle) {
+      final secondPaddleX = 1.0 - _paddle;
+      final secondPaddleWidth = paddleWidth * .75;
+
+      if (checkSinglePaddle(
+        centerX: secondPaddleX,
+        width: secondPaddleWidth,
+      )) {
+        ball.y = paddleY - ballRadius - .018;
+
+        final relative =
+            ((ball.x - secondPaddleX) / (secondPaddleWidth / 2))
+                .clamp(-1.0, 1.0);
+
+        const maxHorizontal = .42;
+        ball.vx = relative * maxHorizontal;
+
+        if (ball.vx.abs() < .12) {
+          ball.vx = ball.vx >= 0 ? .12 : -.12;
+        }
+
+        ball.vy = -_initialVerticalSpeed();
+
+        _impact(ball.x, paddleY);
+        _addSparks(ball.x, paddleY, 8);
+      }
     }
   }
 
@@ -519,7 +599,6 @@ class _GameScreenState extends State<GameScreen>
     _stageHits++;
 
     _score += 10 + min(_combo * 2, 50);
-    _stageMechanicCounter++;
     _checkStageMechanic();
 
     _addSparks(brick.x, brick.y, 10);
@@ -575,55 +654,45 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _checkStageMechanic() {
-    if (widget.level < 4 || _stageMechanicActive) {
+    if (_powerStageActive) {
       return;
     }
 
-    switch (_stageConfig.theme) {
-      case StageTheme.classic:
-        return;
+    // POWER STAGE is directly calculated from the current COMBO.
+    //
+    // The target combo adapts to the number of bricks in the level:
+    // small levels can reach Power Stage without requiring an
+    // unnecessarily high combo, while larger levels require more.
+    final totalBricks = _bricks.length;
 
-      case StageTheme.neon:
-        if (_combo >= 5) {
-          _activateStageMechanic(2.5);
-          _score += 100;
-          _addSparks(_paddle, .88, 30);
-        }
-        return;
+    final targetCombo = max(10, min(30, (totalBricks * 0.65).round()));
 
-      case StageTheme.cyber:
-        if (_stageMechanicCounter % 10 == 0) {
-          _activateStageMechanic(2.0);
-        }
-        return;
+    final comboProgress = (_combo / targetCombo).clamp(0.0, 1.0);
 
-      case StageTheme.reactor:
-        if (_combo >= 7) {
-          _activateStageMechanic(3.0);
-          _score += 150;
-          _addSparks(_paddle, .88, 40);
-        }
-        return;
+    _powerStage = comboProgress * 100.0;
 
-      case StageTheme.voidZone:
-        if (_stageMechanicCounter % 12 == 0) {
-          _activateStageMechanic(2.5);
-        }
-        return;
-
-      case StageTheme.galaxy:
-        if (_combo >= 10) {
-          _activateStageMechanic(4.0);
-          _score += 250;
-          _addSparks(_paddle, .88, 50);
-        }
-        return;
+    if (_powerStage >= 100.0) {
+      _activatePowerStage();
     }
   }
 
-  void _activateStageMechanic(double duration) {
-    _stageMechanicActive = true;
-    _stageMechanicTimer = duration;
+  void _activatePowerStage() {
+    _powerStage = 100;
+    _powerStageActive = true;
+    _powerStageTimer = 8.0;
+    _powerStageAnnouncementTimer = 1.35;
+
+    // Temporary super-wide paddle.
+    _widePaddle = true;
+    _wideTimer = 8.0;
+
+    // Give every active ball the power-stage fire effect.
+    for (final ball in _balls) {
+      ball.fire = true;
+    }
+
+    _score += 250;
+    _addSparks(_paddle, .88, 60);
   }
 
   void _explodeBrick(Brick center) {
@@ -757,6 +826,19 @@ class _GameScreenState extends State<GameScreen>
     }
 
     _lives--;
+
+    // Losing a life breaks the combo and heavily drains Power Stage.
+    _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
+
+    if (_powerStageActive) {
+      _powerStageActive = false;
+      _powerStageTimer = 0;
+      _powerStageAnnouncementTimer = 0;
+
+      for (final ball in _balls) {
+        ball.fire = false;
+      }
+    }
 
     if (_lives <= 0) {
       _gameOver = true;
@@ -974,15 +1056,20 @@ class _GameScreenState extends State<GameScreen>
 
   void _goHome() {
     AdService.instance.maybeShowInterstitial();
-    Navigator.of(context).pop();
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => HomeScreen(save: widget.save)),
+      (route) => false,
+    );
   }
 
   Widget _resultNavigation() {
     final isWin = _levelClear;
+    final accent = isWin ? NeonColors.cyan : NeonColors.pink;
 
     return Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: .58),
+        color: Colors.black.withValues(alpha: .68),
         child: SafeArea(
           child: Center(
             child: AnimatedScale(
@@ -991,26 +1078,24 @@ class _GameScreenState extends State<GameScreen>
               curve: Curves.easeOutBack,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 24,
+                  horizontal: 20,
+                  vertical: 20,
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 390),
+                  constraints: const BoxConstraints(maxWidth: 410),
                   child: Container(
-                    padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF090313),
-                      borderRadius: BorderRadius.circular(26),
+                      color: const Color(0xFF080311),
+                      borderRadius: BorderRadius.circular(28),
                       border: Border.all(
-                        color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                            .withValues(alpha: .85),
+                        color: accent.withValues(alpha: .80),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                              .withValues(alpha: .30),
-                          blurRadius: 35,
+                          color: accent.withValues(alpha: .25),
+                          blurRadius: 38,
                           spreadRadius: 2,
                         ),
                       ],
@@ -1022,32 +1107,36 @@ class _GameScreenState extends State<GameScreen>
                           isWin
                               ? Icons.emoji_events_rounded
                               : Icons.cancel_rounded,
-                          size: 64,
-                          color: isWin ? NeonColors.cyan : NeonColors.pink,
+                          size: 66,
+                          color: accent,
+                          shadows: [
+                            Shadow(
+                              color: accent.withValues(alpha: .85),
+                              blurRadius: 24,
+                            ),
+                          ],
                         ),
 
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 12),
 
                         Text(
                           isWin ? 'LEVEL CLEAR' : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 28,
+                            fontSize: 29,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            color: isWin ? NeonColors.cyan : NeonColors.pink,
+                            letterSpacing: 2.5,
+                            color: accent,
                             shadows: [
                               Shadow(
-                                color:
-                                    (isWin ? NeonColors.cyan : NeonColors.pink)
-                                        .withValues(alpha: .80),
+                                color: accent.withValues(alpha: .85),
                                 blurRadius: 20,
                               ),
                             ],
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
 
                         Text(
                           isWin
@@ -1055,10 +1144,10 @@ class _GameScreenState extends State<GameScreen>
                               : 'TRY AGAIN AND BREAK THEM ALL',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
+                            color: Colors.white54,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
                           ),
                         ),
 
@@ -1067,42 +1156,225 @@ class _GameScreenState extends State<GameScreen>
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 14,
+                            vertical: 15,
+                            horizontal: 12,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: .035),
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(17),
                             border: Border.all(
-                              color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                                  .withValues(alpha: .12),
+                              color: accent.withValues(alpha: .14),
                             ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              _resultStat('LEVEL', '${widget.level}'),
+                              _resultStat(
+                                'LEVEL',
+                                '${widget.level}',
+                              ),
                               _resultDivider(),
-                              _resultStat('SCORE', '$_score'),
+                              _resultStat(
+                                'SCORE',
+                                '$_score',
+                              ),
                               _resultDivider(),
-                              _resultStat('LIVES', '$_lives'),
+                              _resultStat(
+                                'LIVES',
+                                '$_lives',
+                              ),
                             ],
                           ),
                         ),
 
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 20),
 
                         if (isWin) ...[
+                          // ------------------------------------------------
+                          // PREMIUM DOUBLE BONUS CARD
+                          // ------------------------------------------------
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(
+                              16,
+                              16,
+                              16,
+                              14,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(22),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  NeonColors.yellow.withValues(alpha: .16),
+                                  NeonColors.yellow.withValues(alpha: .035),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              border: Border.all(
+                                color: NeonColors.yellow.withValues(alpha: .55),
+                                width: 1.4,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: NeonColors.yellow.withValues(alpha: .16),
+                                  blurRadius: 28,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.auto_awesome_rounded,
+                                      color: NeonColors.yellow,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 7),
+                                    const Text(
+                                      'LEVEL REWARD',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 7),
+                                    Icon(
+                                      Icons.auto_awesome_rounded,
+                                      color: NeonColors.yellow,
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 4),
+
+                                const Text(
+                                  '×2 BONUS',
+                                  style: TextStyle(
+                                    color: NeonColors.yellow,
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 2,
+                                    shadows: [
+                                      Shadow(
+                                        color: NeonColors.yellow,
+                                        blurRadius: 18,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(height: 2),
+
+                                Text(
+                                  '+$_bonusScore',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 3),
+
+                                const Text(
+                                  'WATCH A SHORT AD TO DOUBLE YOUR BONUS',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: .7,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                if (!_doubleBonusUsed)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 54,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(17),
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFFFFD740),
+                                            Color(0xFFFFA000),
+                                          ],
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: NeonColors.yellow
+                                                .withValues(alpha: .38),
+                                            blurRadius: 22,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
+                                      child: ElevatedButton.icon(
+                                        onPressed: _watchAdForDoubleBonus,
+                                        icon: const Icon(
+                                          Icons.ondemand_video_rounded,
+                                          size: 25,
+                                          color: Colors.black,
+                                        ),
+                                        label: const Text(
+                                          'WATCH AD  •  GET ×2',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          foregroundColor: Colors.black,
+                                          shadowColor: Colors.transparent,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(17),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  const Text(
+                                    'BONUS DOUBLED ✓',
+                                    style: TextStyle(
+                                      color: NeonColors.green,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          // Stars remain below the reward card.
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 18,
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: NeonColors.yellow.withValues(alpha: .045),
+                              color: NeonColors.yellow.withValues(alpha: .035),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: NeonColors.yellow.withValues(alpha: .12),
+                                color: NeonColors.yellow.withValues(alpha: .10),
                               ),
                             ),
                             child: Row(
@@ -1117,7 +1389,7 @@ class _GameScreenState extends State<GameScreen>
                                     index < _earnedStars
                                         ? Icons.star_rounded
                                         : Icons.star_border_rounded,
-                                    size: 36,
+                                    size: 34,
                                     color: index < _earnedStars
                                         ? NeonColors.yellow
                                         : Colors.white24,
@@ -1141,17 +1413,6 @@ class _GameScreenState extends State<GameScreen>
 
                           const SizedBox(height: 18),
 
-                          if (!_doubleBonusUsed) ...[
-                            _resultButton(
-                              label: 'WATCH AD  •  DOUBLE BONUS',
-                              icon: Icons.ondemand_video_rounded,
-                              primary: false,
-                              accent: NeonColors.yellow,
-                              onPressed: _watchAdForDoubleBonus,
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-
                           _resultButton(
                             label: 'NEXT LEVEL',
                             icon: Icons.arrow_forward_rounded,
@@ -1169,12 +1430,172 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ] else ...[
                           if (!_continueUsed) ...[
-                            _resultButton(
-                              label: 'WATCH AD  •  EXTRA LIFE',
-                              icon: Icons.favorite_rounded,
-                              primary: false,
-                              accent: NeonColors.green,
-                              onPressed: _watchAdToContinue,
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                15,
+                                16,
+                                14,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    NeonColors.green.withValues(alpha: .17),
+                                    NeonColors.green.withValues(alpha: .045),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: NeonColors.green.withValues(alpha: .62),
+                                  width: 1.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: NeonColors.green.withValues(alpha: .20),
+                                    blurRadius: 30,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.favorite_rounded,
+                                        color: NeonColors.green,
+                                        size: 22,
+                                        shadows: [
+                                          Shadow(
+                                            color: NeonColors.green,
+                                            blurRadius: 15,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'ONE MORE CHANCE',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        Icons.favorite_rounded,
+                                        color: NeonColors.green,
+                                        size: 22,
+                                        shadows: [
+                                          Shadow(
+                                            color: NeonColors.green,
+                                            blurRadius: 15,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 2),
+
+                                  const Text(
+                                    '+1 LIFE',
+                                    style: TextStyle(
+                                      color: NeonColors.green,
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 2,
+                                      shadows: [
+                                        Shadow(
+                                          color: NeonColors.green,
+                                          blurRadius: 20,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 2),
+
+                                  const Text(
+                                    'CONTINUE YOUR GAME',
+                                    style: TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 12),
+
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 56,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(18),
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF63FF9C),
+                                            Color(0xFF0DB957),
+                                          ],
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: NeonColors.green.withValues(alpha: .42),
+                                            blurRadius: 24,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
+                                      child: ElevatedButton.icon(
+                                        onPressed: _watchAdToContinue,
+                                        icon: const Icon(
+                                          Icons.ondemand_video_rounded,
+                                          size: 26,
+                                          color: Colors.black,
+                                        ),
+                                        label: const Text(
+                                          'WATCH AD  •  GET +1 LIFE',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          foregroundColor: Colors.black,
+                                          shadowColor: Colors.transparent,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(18),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 6),
+
+                                  const Text(
+                                    'FREE • WATCH A SHORT AD',
+                                    style: TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 10),
                           ],
@@ -1381,6 +1802,10 @@ class _GameScreenState extends State<GameScreen>
                     score: _score,
                     lives: _lives,
                     combo: _combo,
+                    powerStage: _powerStage,
+                    powerStageActive: _powerStageActive,
+                    powerStageTimer: _powerStageTimer,
+                    powerStageAnnouncementTimer: _powerStageAnnouncementTimer,
                     stageEventActive: _stageEventActive,
                     stageEventTimer: _stageEventTimer,
                     stageMechanicActive: _stageMechanicActive,
@@ -1453,6 +1878,10 @@ class _NeonGamePainter extends CustomPainter {
     required this.stageMechanicTimer,
     required this.lives,
     required this.combo,
+    required this.powerStage,
+    required this.powerStageActive,
+    required this.powerStageTimer,
+    required this.powerStageAnnouncementTimer,
     required this.paddle,
     required this.balls,
     required this.bricks,
@@ -1477,6 +1906,11 @@ class _NeonGamePainter extends CustomPainter {
   final double stageMechanicTimer;
   final int lives;
   final int combo;
+
+  final double powerStage;
+  final bool powerStageActive;
+  final double powerStageTimer;
+  final double powerStageAnnouncementTimer;
 
   final double paddle;
 
@@ -1601,87 +2035,6 @@ class _NeonGamePainter extends CustomPainter {
     );
   }
 
-  void _drawStageMechanic(Canvas canvas, Size size) {
-    if (!stageEventActive && !stageMechanicActive) {
-      return;
-    }
-
-    final accent = _stageAccent();
-
-    final progress = stageMechanicActive
-        ? (stageMechanicTimer / 4.0).clamp(0.0, 1.0)
-        : 0.0;
-
-    final center = Offset(size.width / 2, size.height * .88);
-
-    final glow = Paint()
-      ..color = accent.withValues(
-        alpha: stageMechanicActive ? .08 + progress * .14 : .05,
-      )
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(
-      center,
-      stageMechanicActive ? 48 + (1 - progress) * 24 : 42,
-      glow,
-    );
-
-    final border = Paint()
-      ..color = accent.withValues(
-        alpha: stageMechanicActive ? .30 + progress * .45 : .20,
-      )
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawCircle(
-      center,
-      stageMechanicActive ? 28 + (1 - progress) * 12 : 26,
-      border,
-    );
-
-    final label = stageMechanicActive ? 'STAGE POWER' : 'STAGE READY';
-
-    final progressValue = progress.clamp(0.0, 1.0);
-
-    final progressRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(center.dx - 42, size.height * .855, 84, 4),
-      const Radius.circular(4),
-    );
-
-    canvas.drawRRect(
-      progressRect,
-      Paint()..color = Colors.white.withValues(alpha: .08),
-    );
-
-    final progressFill = RRect.fromRectAndRadius(
-      Rect.fromLTWH(center.dx - 42, size.height * .855, 84 * progressValue, 4),
-      const Radius.circular(4),
-    );
-
-    canvas.drawRRect(
-      progressFill,
-      Paint()..color = accent.withValues(alpha: .75),
-    );
-
-    final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.6,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    painter.paint(
-      canvas,
-      Offset(center.dx - painter.width / 2, size.height * .81),
-    );
-  }
-
   void _drawStageIdentity(Canvas canvas, Size size) {
     final titlePainter = TextPainter(
       text: TextSpan(
@@ -1723,10 +2076,124 @@ class _NeonGamePainter extends CustomPainter {
     );
   }
 
+  void _drawPowerStage(Canvas canvas, Size size) {
+    final progress = (powerStage / 100.0).clamp(0.0, 1.0);
+
+    final accent = powerStageActive
+        ? NeonColors.cyan
+        : progress >= .70
+        ? NeonColors.yellow
+        : NeonColors.purple;
+
+    final left = 18.0;
+    final right = size.width - 18.0;
+    final top = 91.0;
+    final height = 10.0;
+
+    final background = RRect.fromRectAndRadius(
+      Rect.fromLTRB(left, top, right, top + height),
+      const Radius.circular(8),
+    );
+
+    canvas.drawRRect(
+      background,
+      Paint()..color = Colors.black.withValues(alpha: .48),
+    );
+
+    if (progress > 0) {
+      final fill = RRect.fromRectAndRadius(
+        Rect.fromLTRB(
+          left,
+          top,
+          left + (right - left) * progress,
+          top + height,
+        ),
+        const Radius.circular(8),
+      );
+
+      canvas.drawRRect(
+        fill,
+        Paint()
+          ..color = accent.withValues(alpha: .85)
+          ..maskFilter = progress >= .70
+              ? const MaskFilter.blur(BlurStyle.normal, 5)
+              : null,
+      );
+    }
+
+    final border = RRect.fromRectAndRadius(
+      Rect.fromLTRB(left, top, right, top + height),
+      const Radius.circular(8),
+    );
+
+    canvas.drawRRect(
+      border,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = powerStageActive ? 2 : 1
+        ..color = accent.withValues(alpha: powerStageActive ? .8 : .28),
+    );
+
+    _text(
+      canvas,
+      powerStageActive
+          ? 'POWER STAGE  ${powerStageTimer.ceil()}'
+          : 'POWER STAGE  ${powerStage.round()}%',
+      Offset(left, top + 13),
+      8,
+      accent,
+    );
+
+    if (powerStageAnnouncementTimer > 0 && !paused) {
+      final pulse = (powerStageAnnouncementTimer / 1.35).clamp(0.0, 1.0);
+
+      final glow = Paint()
+        ..color = NeonColors.cyan.withValues(alpha: .12 + pulse * .18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+
+      canvas.drawCircle(
+        Offset(size.width / 2, size.height * .50),
+        90 + (1 - pulse) * 35,
+        glow,
+      );
+
+      _centerText(
+        canvas,
+        'POWER STAGE',
+        Offset(size.width / 2, size.height * .50),
+        30 + (1 - pulse) * 8,
+        NeonColors.cyan,
+      );
+    }
+
+    if (powerStageActive) {
+      final barrierY = size.height * .875;
+
+      final barrier = Paint()
+        ..color = NeonColors.cyan.withValues(alpha: .75)
+        ..strokeWidth = 4
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+
+      canvas.drawLine(
+        Offset(10, barrierY),
+        Offset(size.width - 10, barrierY),
+        barrier,
+      );
+
+      canvas.drawLine(
+        Offset(10, barrierY),
+        Offset(size.width - 10, barrierY),
+        Paint()
+          ..color = Colors.white.withValues(alpha: .85)
+          ..strokeWidth = 1.5,
+      );
+    }
+  }
+
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
     _drawStageEvent(canvas, size);
-    _drawStageMechanic(canvas, size);
+    _drawPowerStage(canvas, size);
 
     if (combo >= 2 && !paused) {
       final double comboSize = combo >= 10
@@ -1735,12 +2202,14 @@ class _NeonGamePainter extends CustomPainter {
           ? 19.5
           : 18;
 
+      final comboHot = combo >= 10 || powerStage >= 70;
+
       _centerText(
         canvas,
         'COMBO x$combo',
         Offset(size.width / 2, 37),
         comboSize,
-        NeonColors.yellow,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
       );
     }
 
@@ -1794,6 +2263,7 @@ class _NeonGamePainter extends CustomPainter {
       }
 
       const gameplayTopOffset = .055;
+
       final center = Offset(
         brick.x * size.width,
         (brick.y + gameplayTopOffset) * size.height,
@@ -1808,69 +2278,248 @@ class _NeonGamePainter extends CustomPainter {
         height: height,
       );
 
+      final radius = const Radius.circular(7);
       final color = _brickColor(brick);
 
-      final glow = Paint()
-        ..color = color.withValues(alpha: .52)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-
+      // Outer neon glow.
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
-        glow,
-      );
-
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
+        RRect.fromRectAndRadius(rect.inflate(5), radius),
         Paint()
-          ..style = PaintingStyle.fill
-          ..color = color.withValues(alpha: .58),
+          ..color = color.withValues(alpha: .16)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
       );
 
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect.deflate(1.5), const Radius.circular(6)),
+        RRect.fromRectAndRadius(rect.inflate(2), radius),
+        Paint()
+          ..color = color.withValues(alpha: .34)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+      );
+
+      // Main glass/neon body.
+      final body = RRect.fromRectAndRadius(rect, radius);
+
+      canvas.drawRRect(
+        body,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              color.withValues(alpha: .92),
+              color.withValues(alpha: .48),
+            ],
+          ).createShader(rect),
+      );
+
+      // Dark inner panel gives the brick depth.
+      final inner = RRect.fromRectAndRadius(
+        rect.deflate(2.0),
+        const Radius.circular(5),
+      );
+
+      canvas.drawRRect(
+        inner,
+        Paint()..color = Colors.black.withValues(alpha: .16),
+      );
+
+      // Bright neon border.
+      canvas.drawRRect(
+        inner,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.4
-          ..color = Colors.white.withValues(alpha: .72),
-      );
-      // Bright neon edge.
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect.deflate(.5), const Radius.circular(7)),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2
-          ..color = color.withValues(alpha: .90)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+          ..color = color.withValues(alpha: .95)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
       );
 
+      // White glass highlight.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            rect.left + 3,
+            rect.top + 2,
+            rect.width - 6,
+            rect.height * .28,
+          ),
+          const Radius.circular(3),
+        ),
+        Paint()..color = Colors.white.withValues(alpha: .18),
+      );
+
+      // ------------------------------------------------------------
+      // SPECIAL BRICK ICONS
+      // ------------------------------------------------------------
+
       if (brick.type == BrickType.explosive) {
-        _text(
-          canvas,
-          '✦',
-          Offset(center.dx - 6, center.dy - 8),
-          13,
-          Colors.white,
+        final iconCenter = Offset(center.dx, center.dy);
+
+        // Orange glowing core.
+        canvas.drawCircle(
+          iconCenter,
+          min(rect.height * .34, 7.5),
+          Paint()
+            ..color = Colors.white.withValues(alpha: .25)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
+
+        canvas.drawCircle(
+          iconCenter,
+          min(rect.height * .25, 5.5),
+          Paint()..color = Colors.white.withValues(alpha: .95),
+        );
+
+        // Explosion rays.
+        final rayPaint = Paint()
+          ..color = Colors.white
+          ..strokeWidth = 1.5
+          ..strokeCap = StrokeCap.round;
+
+        const ray = 5.0;
+
+        canvas.drawLine(
+          Offset(iconCenter.dx, iconCenter.dy - ray),
+          Offset(iconCenter.dx, iconCenter.dy - ray - 3),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx, iconCenter.dy + ray),
+          Offset(iconCenter.dx, iconCenter.dy + ray + 3),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx - ray, iconCenter.dy),
+          Offset(iconCenter.dx - ray - 3, iconCenter.dy),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx + ray, iconCenter.dy),
+          Offset(iconCenter.dx + ray + 3, iconCenter.dy),
+          rayPaint,
+        );
+
+        // Diagonal rays.
+        canvas.drawLine(
+          Offset(iconCenter.dx - 3.5, iconCenter.dy - 3.5),
+          Offset(iconCenter.dx - 6, iconCenter.dy - 6),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx + 3.5, iconCenter.dy - 3.5),
+          Offset(iconCenter.dx + 6, iconCenter.dy - 6),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx - 3.5, iconCenter.dy + 3.5),
+          Offset(iconCenter.dx - 6, iconCenter.dy + 6),
+          rayPaint,
+        );
+
+        canvas.drawLine(
+          Offset(iconCenter.dx + 3.5, iconCenter.dy + 3.5),
+          Offset(iconCenter.dx + 6, iconCenter.dy + 6),
+          rayPaint,
         );
       }
 
       if (brick.type == BrickType.steel) {
-        _text(
+        // Metallic shield-like icon.
+        final shieldPath = Path()
+          ..moveTo(center.dx, center.dy - 7)
+          ..lineTo(center.dx + 7, center.dy - 4)
+          ..lineTo(center.dx + 5, center.dy + 3)
+          ..quadraticBezierTo(
+            center.dx,
+            center.dy + 8,
+            center.dx,
+            center.dy + 8,
+          )
+          ..quadraticBezierTo(
+            center.dx,
+            center.dy + 8,
+            center.dx - 5,
+            center.dy + 3,
+          )
+          ..lineTo(center.dx - 7, center.dy - 4)
+          ..close();
+
+        canvas.drawPath(
+          shieldPath,
+          Paint()
+            ..color = Colors.white.withValues(alpha: .20)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+
+        canvas.drawPath(
+          shieldPath,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = Colors.white.withValues(alpha: .88),
+        );
+
+        // HP number remains clearly visible.
+        final hpPainter = TextPainter(
+          text: TextSpan(
+            text: '${brick.hp}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        hpPainter.paint(
           canvas,
-          '${brick.hp}',
-          Offset(center.dx - 4, center.dy - 7),
-          11,
-          Colors.white,
+          Offset(
+            center.dx - hpPainter.width / 2,
+            center.dy - hpPainter.height / 2,
+          ),
         );
       }
 
       if (brick.type == BrickType.bonus) {
-        _text(
-          canvas,
-          '+',
-          Offset(center.dx - 5, center.dy - 8),
-          14,
-          Colors.white,
+        final starPath = Path();
+
+        const points = 5;
+        final outerRadius = 7.0;
+        final innerRadius = 3.2;
+
+        for (int i = 0; i < points * 2; i++) {
+          final angle = -pi / 2 + i * pi / points;
+          final radius = i.isEven ? outerRadius : innerRadius;
+
+          final point = Offset(
+            center.dx + cos(angle) * radius,
+            center.dy + sin(angle) * radius,
+          );
+
+          if (i == 0) {
+            starPath.moveTo(point.dx, point.dy);
+          } else {
+            starPath.lineTo(point.dx, point.dy);
+          }
+        }
+
+        starPath.close();
+
+        canvas.drawPath(
+          starPath,
+          Paint()
+            ..color = Colors.white.withValues(alpha: .35)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
         );
+
+        canvas.drawPath(starPath, Paint()..color = Colors.white);
+
+        canvas.drawCircle(center, 2, Paint()..color = color);
       }
     }
   }
@@ -1901,7 +2550,11 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final width = widePaddle ? .31 : .23;
+    final width = powerStageActive
+        ? .88
+        : widePaddle
+        ? .31
+        : .23;
 
     final center = Offset(paddle * size.width, size.height * .905);
 

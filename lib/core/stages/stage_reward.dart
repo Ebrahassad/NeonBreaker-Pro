@@ -13,25 +13,11 @@ StageReward calculateStageReward({
   required int bonusMultiplier,
   bool challengeCompleted = false,
 }) {
-  var stars = 1;
-
-  if (lives >= 3) {
-    stars++;
-  }
-
-  if (bestCombo >= 5) {
-    stars++;
-  }
-
-  if (challengeCompleted) {
-    stars++;
-  }
-
-  if (level >= 10 && score >= level * 100) {
-    stars = 3;
-  }
-
-  stars = stars.clamp(1, 3);
+  // Stars are directly tied to remaining lives.
+  // 3 lives = 3 stars
+  // 2 lives = 2 stars
+  // 1 life  = 1 star
+  final stars = lives.clamp(0, 3);
 
   final baseBonus = level * 25 + bestCombo * 5 + lives * 10;
 
@@ -39,5 +25,8 @@ StageReward calculateStageReward({
 
   final bonusScore = (baseBonus + challengeBonus) * bonusMultiplier;
 
-  return StageReward(stars: stars, bonusScore: bonusScore);
+  return StageReward(
+    stars: stars,
+    bonusScore: bonusScore,
+  );
 }
