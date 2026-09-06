@@ -9,20 +9,23 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Catches ANY uncaught exception (including ones from third-party SDKs
- * like Unity Ads, and ones that happen before the Flutter engine even
- * starts) and writes the full stack trace to a plain text file under
- * this app's own external files directory.
+ * Catches ANY uncaught exception — including ones thrown by a
+ * third-party SDK's own auto-starting ContentProvider (e.g. Unity Ads),
+ * which run BEFORE Application.onCreate(). The handler is installed in
+ * this class's `init` block, which executes during object construction
+ * — the earliest point our own code can run in the whole process.
  *
- * The Flutter side (see main.dart) reads this file back on next launch
- * and shows it in a copyable dialog — no adb, no Play Console, no root
- * needed to retrieve it.
+ * The Flutter side (see crash_log_service.dart / home_screen.dart) reads
+ * this file back on next launch and shows it in a copyable dialog — no
+ * adb, no Play Console, no root needed to retrieve it.
  */
 class NeonBreakerApplication : Application() {
 
-    override fun onCreate() {
-        super.onCreate()
+    init {
+        installCrashHandler()
+    }
 
+    private fun installCrashHandler() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -35,7 +38,11 @@ class NeonBreakerApplication : Application() {
                     Locale.US,
                 ).format(Date())
 
-                val logDir = File(getExternalFilesDir(null), "crash_logs")
+                // Internal storage (filesDir) is always available, needs
+                // no permission, and needs no path guessing on the Dart
+                // side — unlike external storage, which can differ by
+                // device/user profile.
+                val logDir = File(filesDir, "crash_logs")
                 if (!logDir.exists()) {
                     logDir.mkdirs()
                 }

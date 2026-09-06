@@ -1,18 +1,27 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 /// Reads back the crash logs written by `NeonBreakerApplication.kt`
 /// (see android/app/src/main/kotlin/.../NeonBreakerApplication.kt).
 ///
-/// No adb, no Play Console, no root required: this is this app's own
-/// external files directory, which every app can read/write without any
-/// runtime permission.
+/// The exact storage path is fetched from native Android via a
+/// MethodChannel instead of being guessed/hardcoded on the Dart side —
+/// internal storage paths can vary slightly by device/user profile, so
+/// asking Android directly is the only fully reliable way.
 class CrashLogService {
-  static const String _packageName = 'hassadi.neonbreaker.pro';
+  static const MethodChannel _channel = MethodChannel(
+    'neonbreaker/crash_logs',
+  );
 
-  static Directory _crashLogDir() {
-    return Directory(
-      '/storage/emulated/0/Android/data/$_packageName/files/crash_logs',
-    );
+  static Future<Directory?> _crashLogDir() async {
+    try {
+      final path = await _channel.invokeMethod<String>('getFilesDirPath');
+      if (path == null) return null;
+      return Directory('$path/crash_logs');
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Returns the most recent crash log's contents, or null if there
@@ -20,9 +29,8 @@ class CrashLogService {
   /// on this device — both are treated the same: just skip silently).
   static Future<String?> latestCrashLog() async {
     try {
-      final dir = _crashLogDir();
-
-      if (!await dir.exists()) return null;
+      final dir = await _crashLogDir();
+      if (dir == null || !await dir.exists()) return null;
 
       final files = await dir
           .list()
@@ -44,8 +52,8 @@ class CrashLogService {
   /// and copied the one they needed).
   static Future<void> clearAll() async {
     try {
-      final dir = _crashLogDir();
-      if (await dir.exists()) {
+      final dir = await _crashLogDir();
+      if (dir != null && await dir.exists()) {
         await dir.delete(recursive: true);
       }
     } catch (_) {
