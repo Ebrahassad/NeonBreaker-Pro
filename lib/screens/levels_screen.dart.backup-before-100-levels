@@ -144,7 +144,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(18),
-              itemCount: 100,
+              itemCount: 50,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 4,
                 crossAxisSpacing: 12,

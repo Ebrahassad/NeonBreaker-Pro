@@ -225,135 +225,44 @@ class _GameScreenState extends State<GameScreen>
 
     bool shouldSpawnBrick(int row, int col) {
       final center = 3.5;
-      final variant = widget.level % 4;
       final distance = (col - center).abs();
 
       switch (pattern) {
         case StagePattern.classic:
-          if (variant == 1) {
-            return row < rows - 1 || col.isEven;
-          }
-          if (variant == 2) {
-            return row != rows ~/ 2 || col % 3 != 0;
-          }
-          if (variant == 3) {
-            return row == 0 ||
-                row == rows - 1 ||
-                col == 0 ||
-                col == columns - 1 ||
-                (row + col) % 3 == 0;
-          }
           return true;
 
         case StagePattern.diamond:
-          final diamondRow = min(7, rows - 1);
-          final base =
-              row >= distance - .5 && row <= diamondRow - distance + .5;
-          if (variant == 1) {
-            return base && !(row == 3 && col == 3);
-          }
-          if (variant == 2) {
-            return base && (row + col) % 3 != 1;
-          }
-          if (variant == 3) {
-            return base || (row == 0 && col >= 2 && col <= 5);
-          }
-          return base;
+          return row >= distance - .5 && row <= 7 - distance + .5;
 
         case StagePattern.fortress:
-          final wall =
-              row == 0 || row == rows - 1 || col == 0 || col == columns - 1;
-          if (variant == 1) {
-            return wall || (row == 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return wall || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return wall ||
-                (row == 2 && col >= 2 && col <= 5) ||
-                (row == rows - 3 && col >= 2 && col <= 5);
-          }
-          return wall || (row == 2 && col >= 2 && col <= 5);
+          return row == 0 ||
+              row == rows - 1 ||
+              col == 0 ||
+              col == columns - 1 ||
+              (row == 2 && col >= 2 && col <= 5);
 
         case StagePattern.checker:
-          if (variant == 1) {
-            return (row + col) % 2 == 0 && row != rows - 1;
-          }
-          if (variant == 2) {
-            return (row + col) % 2 == 0 || row == rows ~/ 2;
-          }
-          if (variant == 3) {
-            return (row + col) % 2 == 0 && col != 3 && col != 4;
-          }
           return (row + col) % 2 == 0;
 
         case StagePattern.pyramid:
           final width = min(columns, 2 + row * 2);
           final left = (columns - width) ~/ 2;
-          final inside = col >= left && col < left + width;
-          if (variant == 1) {
-            return inside && !(row == rows - 1 && col > 1 && col < 6);
-          }
-          if (variant == 2) {
-            return inside && (row + col) % 3 != 1;
-          }
-          if (variant == 3) {
-            return inside || (row == 0 && col >= 3 && col <= 4);
-          }
-          return inside;
+          return col >= left && col < left + width;
 
         case StagePattern.cross:
-          final vertical = col == columns ~/ 2 || col == columns ~/ 2 - 1;
-          final horizontal = row == rows ~/ 2;
-          if (variant == 1) {
-            return vertical || horizontal || row == 1;
-          }
-          if (variant == 2) {
-            return vertical ||
-                horizontal ||
-                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return vertical || horizontal || row == 0 || row == rows - 1;
-          }
-          return vertical || horizontal;
+          return row == rows ~/ 2 ||
+              col == columns ~/ 2 ||
+              col == columns ~/ 2 - 1;
 
         case StagePattern.tunnel:
-          final outer =
-              row < 2 || row >= rows - 2 || col == 0 || col == columns - 1;
-          if (variant == 1) {
-            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return outer || col == 3 || col == 4;
-          }
-          if (variant == 3) {
-            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          return outer;
+          return row < 2 || row >= rows - 2 || col == 0 || col == columns - 1;
 
         case StagePattern.boss:
-          final frame =
-              row == 0 ||
+          return row == 0 ||
               row == 1 ||
               row == rows ~/ 2 ||
               col == 0 ||
               col == columns - 1;
-          if (variant == 1) {
-            return frame || (row == 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return frame ||
-                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5) ||
-                (row == rows ~/ 2 + 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return frame ||
-                (row == 2 && (col == 2 || col == 5)) ||
-                (row == rows - 3 && (col == 2 || col == 5));
-          }
-          return frame;
       }
     }
 
@@ -1162,17 +1071,17 @@ class _GameScreenState extends State<GameScreen>
                           isWin
                               ? Icons.emoji_events_rounded
                               : Icons.cancel_rounded,
-                          size: 44,
+                          size: 64,
                           color: isWin ? NeonColors.cyan : NeonColors.pink,
                         ),
 
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 14),
 
                         Text(
                           isWin ? 'LEVEL CLEAR' : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 28,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2,
                             color: isWin ? NeonColors.cyan : NeonColors.pink,
@@ -1187,7 +1096,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 8),
 
                         Text(
                           isWin
@@ -1202,7 +1111,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 20),
 
                         Container(
                           width: double.infinity,
@@ -1230,7 +1139,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 22),
 
                         if (isWin) ...[
                           Container(
@@ -1279,7 +1188,7 @@ class _GameScreenState extends State<GameScreen>
                             ),
                           ),
 
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 18),
 
                           if (!_doubleBonusUsed) ...[
                             _resultButton(

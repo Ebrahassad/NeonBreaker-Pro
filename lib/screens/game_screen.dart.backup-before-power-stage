@@ -8,7 +8,6 @@ import '../core/stages/stage_pattern.dart';
 import '../core/stages/stage_reward.dart';
 import '../services/ad_service.dart';
 import '../services/save_service.dart';
-import 'home_screen.dart';
 
 enum BrickType { normal, explosive, steel, bonus }
 
@@ -105,12 +104,6 @@ class _GameScreenState extends State<GameScreen>
   int _stageHits = 0;
   bool _stageEventActive = false;
   double _stageEventTimer = 0;
-
-  // POWER STAGE
-  double _powerStage = 0;
-  bool _powerStageActive = false;
-  double _powerStageTimer = 0;
-  double _powerStageAnnouncementTimer = 0;
   double _stageElapsed = 0;
 
   bool _paused = false;
@@ -126,6 +119,7 @@ class _GameScreenState extends State<GameScreen>
   bool _doubleBonusUsed = false;
   bool _stageMechanicActive = false;
   double _stageMechanicTimer = 0;
+  int _stageMechanicCounter = 0;
 
   double _wideTimer = 0;
   double _shieldTimer = 0;
@@ -186,11 +180,6 @@ class _GameScreenState extends State<GameScreen>
     _stageEventActive = false;
     _stageEventTimer = 0;
 
-    _powerStage = 0;
-    _powerStageActive = false;
-    _powerStageTimer = 0;
-    _powerStageAnnouncementTimer = 0;
-
     _paused = false;
     _gameOver = false;
     _levelClear = false;
@@ -225,135 +214,44 @@ class _GameScreenState extends State<GameScreen>
 
     bool shouldSpawnBrick(int row, int col) {
       final center = 3.5;
-      final variant = widget.level % 4;
       final distance = (col - center).abs();
 
       switch (pattern) {
         case StagePattern.classic:
-          if (variant == 1) {
-            return row < rows - 1 || col.isEven;
-          }
-          if (variant == 2) {
-            return row != rows ~/ 2 || col % 3 != 0;
-          }
-          if (variant == 3) {
-            return row == 0 ||
-                row == rows - 1 ||
-                col == 0 ||
-                col == columns - 1 ||
-                (row + col) % 3 == 0;
-          }
           return true;
 
         case StagePattern.diamond:
-          final diamondRow = min(7, rows - 1);
-          final base =
-              row >= distance - .5 && row <= diamondRow - distance + .5;
-          if (variant == 1) {
-            return base && !(row == 3 && col == 3);
-          }
-          if (variant == 2) {
-            return base && (row + col) % 3 != 1;
-          }
-          if (variant == 3) {
-            return base || (row == 0 && col >= 2 && col <= 5);
-          }
-          return base;
+          return row >= distance - .5 && row <= 7 - distance + .5;
 
         case StagePattern.fortress:
-          final wall =
-              row == 0 || row == rows - 1 || col == 0 || col == columns - 1;
-          if (variant == 1) {
-            return wall || (row == 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return wall || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return wall ||
-                (row == 2 && col >= 2 && col <= 5) ||
-                (row == rows - 3 && col >= 2 && col <= 5);
-          }
-          return wall || (row == 2 && col >= 2 && col <= 5);
+          return row == 0 ||
+              row == rows - 1 ||
+              col == 0 ||
+              col == columns - 1 ||
+              (row == 2 && col >= 2 && col <= 5);
 
         case StagePattern.checker:
-          if (variant == 1) {
-            return (row + col) % 2 == 0 && row != rows - 1;
-          }
-          if (variant == 2) {
-            return (row + col) % 2 == 0 || row == rows ~/ 2;
-          }
-          if (variant == 3) {
-            return (row + col) % 2 == 0 && col != 3 && col != 4;
-          }
           return (row + col) % 2 == 0;
 
         case StagePattern.pyramid:
           final width = min(columns, 2 + row * 2);
           final left = (columns - width) ~/ 2;
-          final inside = col >= left && col < left + width;
-          if (variant == 1) {
-            return inside && !(row == rows - 1 && col > 1 && col < 6);
-          }
-          if (variant == 2) {
-            return inside && (row + col) % 3 != 1;
-          }
-          if (variant == 3) {
-            return inside || (row == 0 && col >= 3 && col <= 4);
-          }
-          return inside;
+          return col >= left && col < left + width;
 
         case StagePattern.cross:
-          final vertical = col == columns ~/ 2 || col == columns ~/ 2 - 1;
-          final horizontal = row == rows ~/ 2;
-          if (variant == 1) {
-            return vertical || horizontal || row == 1;
-          }
-          if (variant == 2) {
-            return vertical ||
-                horizontal ||
-                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return vertical || horizontal || row == 0 || row == rows - 1;
-          }
-          return vertical || horizontal;
+          return row == rows ~/ 2 ||
+              col == columns ~/ 2 ||
+              col == columns ~/ 2 - 1;
 
         case StagePattern.tunnel:
-          final outer =
-              row < 2 || row >= rows - 2 || col == 0 || col == columns - 1;
-          if (variant == 1) {
-            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return outer || col == 3 || col == 4;
-          }
-          if (variant == 3) {
-            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
-          }
-          return outer;
+          return row < 2 || row >= rows - 2 || col == 0 || col == columns - 1;
 
         case StagePattern.boss:
-          final frame =
-              row == 0 ||
+          return row == 0 ||
               row == 1 ||
               row == rows ~/ 2 ||
               col == 0 ||
               col == columns - 1;
-          if (variant == 1) {
-            return frame || (row == 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 2) {
-            return frame ||
-                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5) ||
-                (row == rows ~/ 2 + 2 && col >= 2 && col <= 5);
-          }
-          if (variant == 3) {
-            return frame ||
-                (row == 2 && (col == 2 || col == 5)) ||
-                (row == rows - 3 && (col == 2 || col == 5));
-          }
-          return frame;
       }
     }
 
@@ -412,13 +310,9 @@ class _GameScreenState extends State<GameScreen>
   }
 
   double _speedMultiplier() {
-    final levelSpeed = (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
-
-    if (_powerStageActive) {
-      return levelSpeed * 1.35;
-    }
-
-    return levelSpeed;
+    // Gradual difficulty ramp: slightly faster on later levels, capped so
+    // it always stays comfortably playable.
+    return (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
   }
 
   void _tick() {
@@ -442,24 +336,6 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _updateTimers(double dt) {
-    if (_powerStageAnnouncementTimer > 0) {
-      _powerStageAnnouncementTimer -= dt;
-
-      if (_powerStageAnnouncementTimer < 0) {
-        _powerStageAnnouncementTimer = 0;
-      }
-    }
-
-    if (_powerStageActive) {
-      _powerStageTimer -= dt;
-
-      if (_powerStageTimer <= 0) {
-        _powerStageTimer = 0;
-        _powerStageActive = false;
-        _powerStage = 0;
-      }
-    }
-
     if (_stageMechanicActive) {
       _stageMechanicTimer -= dt;
 
@@ -553,18 +429,7 @@ class _GameScreenState extends State<GameScreen>
       _checkBricks(ball);
 
       if (ball.y > 1.06) {
-        if (_powerStageActive) {
-          // Power Stage barrier catches the ball instead of losing a life.
-          ball.y = .865;
-          ball.vy = -ball.vy.abs();
-
-          final relative = ((ball.x - _paddle) / .5).clamp(-1.0, 1.0);
-          ball.vx = relative * .48;
-
-          _addSparks(ball.x, .87, 12);
-        } else {
-          ball.alive = false;
-        }
+        ball.alive = false;
       }
     }
 
@@ -654,6 +519,7 @@ class _GameScreenState extends State<GameScreen>
     _stageHits++;
 
     _score += 10 + min(_combo * 2, 50);
+    _stageMechanicCounter++;
     _checkStageMechanic();
 
     _addSparks(brick.x, brick.y, 10);
@@ -709,44 +575,55 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _checkStageMechanic() {
-    if (_powerStageActive) {
+    if (widget.level < 4 || _stageMechanicActive) {
       return;
     }
 
-    // POWER STAGE is directly calculated from the current COMBO.
-    //
-    // The target combo adapts to the number of bricks in the level:
-    // small levels can reach Power Stage without requiring an
-    // unnecessarily high combo, while larger levels require more.
+    switch (_stageConfig.theme) {
+      case StageTheme.classic:
+        return;
 
-    const targetCombo = 15;
+      case StageTheme.neon:
+        if (_combo >= 5) {
+          _activateStageMechanic(2.5);
+          _score += 100;
+          _addSparks(_paddle, .88, 30);
+        }
+        return;
 
-    final comboProgress = (_combo / targetCombo).clamp(0.0, 1.0);
+      case StageTheme.cyber:
+        if (_stageMechanicCounter % 10 == 0) {
+          _activateStageMechanic(2.0);
+        }
+        return;
 
-    _powerStage = comboProgress * 100.0;
+      case StageTheme.reactor:
+        if (_combo >= 7) {
+          _activateStageMechanic(3.0);
+          _score += 150;
+          _addSparks(_paddle, .88, 40);
+        }
+        return;
 
-    if (_powerStage >= 100.0) {
-      _activatePowerStage();
+      case StageTheme.voidZone:
+        if (_stageMechanicCounter % 12 == 0) {
+          _activateStageMechanic(2.5);
+        }
+        return;
+
+      case StageTheme.galaxy:
+        if (_combo >= 10) {
+          _activateStageMechanic(4.0);
+          _score += 250;
+          _addSparks(_paddle, .88, 50);
+        }
+        return;
     }
   }
 
-  void _activatePowerStage() {
-    _powerStage = 100;
-    _powerStageActive = true;
-    _powerStageTimer = 8.0;
-    _powerStageAnnouncementTimer = 1.35;
-
-    // Power Stage uses the extra-wide paddle as its defensive effect.
-    _widePaddle = true;
-    _wideTimer = 8.0;
-
-    // Give every active ball the power-stage fire effect.
-    for (final ball in _balls) {
-      ball.fire = true;
-    }
-
-    _score += 250;
-    _addSparks(_paddle, .88, 60);
+  void _activateStageMechanic(double duration) {
+    _stageMechanicActive = true;
+    _stageMechanicTimer = duration;
   }
 
   void _explodeBrick(Brick center) {
@@ -880,19 +757,6 @@ class _GameScreenState extends State<GameScreen>
     }
 
     _lives--;
-
-    // Losing a life breaks the combo and heavily drains Power Stage.
-    _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
-
-    if (_powerStageActive) {
-      _powerStageActive = false;
-      _powerStageTimer = 0;
-      _powerStageAnnouncementTimer = 0;
-
-      for (final ball in _balls) {
-        ball.fire = false;
-      }
-    }
 
     if (_lives <= 0) {
       _gameOver = true;
@@ -1112,7 +976,9 @@ class _GameScreenState extends State<GameScreen>
     AdService.instance.maybeShowInterstitial();
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => HomeScreen(save: widget.save)),
+      MaterialPageRoute(
+        builder: (_) => HomeScreen(save: widget.save),
+      ),
       (route) => false,
     );
   }
@@ -1162,17 +1028,17 @@ class _GameScreenState extends State<GameScreen>
                           isWin
                               ? Icons.emoji_events_rounded
                               : Icons.cancel_rounded,
-                          size: 44,
+                          size: 64,
                           color: isWin ? NeonColors.cyan : NeonColors.pink,
                         ),
 
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 14),
 
                         Text(
                           isWin ? 'LEVEL CLEAR' : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 28,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2,
                             color: isWin ? NeonColors.cyan : NeonColors.pink,
@@ -1187,7 +1053,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 8),
 
                         Text(
                           isWin
@@ -1202,7 +1068,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 20),
 
                         Container(
                           width: double.infinity,
@@ -1230,7 +1096,7 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 22),
 
                         if (isWin) ...[
                           Container(
@@ -1279,7 +1145,7 @@ class _GameScreenState extends State<GameScreen>
                             ),
                           ),
 
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 18),
 
                           if (!_doubleBonusUsed) ...[
                             _resultButton(
@@ -1521,10 +1387,6 @@ class _GameScreenState extends State<GameScreen>
                     score: _score,
                     lives: _lives,
                     combo: _combo,
-                    powerStage: _powerStage,
-                    powerStageActive: _powerStageActive,
-                    powerStageTimer: _powerStageTimer,
-                    powerStageAnnouncementTimer: _powerStageAnnouncementTimer,
                     stageEventActive: _stageEventActive,
                     stageEventTimer: _stageEventTimer,
                     stageMechanicActive: _stageMechanicActive,
@@ -1597,10 +1459,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.stageMechanicTimer,
     required this.lives,
     required this.combo,
-    required this.powerStage,
-    required this.powerStageActive,
-    required this.powerStageTimer,
-    required this.powerStageAnnouncementTimer,
     required this.paddle,
     required this.balls,
     required this.bricks,
@@ -1625,11 +1483,6 @@ class _NeonGamePainter extends CustomPainter {
   final double stageMechanicTimer;
   final int lives;
   final int combo;
-
-  final double powerStage;
-  final bool powerStageActive;
-  final double powerStageTimer;
-  final double powerStageAnnouncementTimer;
 
   final double paddle;
 
@@ -1754,6 +1607,87 @@ class _NeonGamePainter extends CustomPainter {
     );
   }
 
+  void _drawStageMechanic(Canvas canvas, Size size) {
+    if (!stageEventActive && !stageMechanicActive) {
+      return;
+    }
+
+    final accent = _stageAccent();
+
+    final progress = stageMechanicActive
+        ? (stageMechanicTimer / 4.0).clamp(0.0, 1.0)
+        : 0.0;
+
+    final center = Offset(size.width / 2, size.height * .88);
+
+    final glow = Paint()
+      ..color = accent.withValues(
+        alpha: stageMechanicActive ? .08 + progress * .14 : .05,
+      )
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      center,
+      stageMechanicActive ? 48 + (1 - progress) * 24 : 42,
+      glow,
+    );
+
+    final border = Paint()
+      ..color = accent.withValues(
+        alpha: stageMechanicActive ? .30 + progress * .45 : .20,
+      )
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawCircle(
+      center,
+      stageMechanicActive ? 28 + (1 - progress) * 12 : 26,
+      border,
+    );
+
+    final label = stageMechanicActive ? 'STAGE POWER' : 'STAGE READY';
+
+    final progressValue = progress.clamp(0.0, 1.0);
+
+    final progressRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(center.dx - 42, size.height * .855, 84, 4),
+      const Radius.circular(4),
+    );
+
+    canvas.drawRRect(
+      progressRect,
+      Paint()..color = Colors.white.withValues(alpha: .08),
+    );
+
+    final progressFill = RRect.fromRectAndRadius(
+      Rect.fromLTWH(center.dx - 42, size.height * .855, 84 * progressValue, 4),
+      const Radius.circular(4),
+    );
+
+    canvas.drawRRect(
+      progressFill,
+      Paint()..color = accent.withValues(alpha: .75),
+    );
+
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.6,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    painter.paint(
+      canvas,
+      Offset(center.dx - painter.width / 2, size.height * .81),
+    );
+  }
+
   void _drawStageIdentity(Canvas canvas, Size size) {
     final titlePainter = TextPainter(
       text: TextSpan(
@@ -1795,124 +1729,10 @@ class _NeonGamePainter extends CustomPainter {
     );
   }
 
-  void _drawPowerStage(Canvas canvas, Size size) {
-    final progress = (powerStage / 100.0).clamp(0.0, 1.0);
-
-    final accent = powerStageActive
-        ? NeonColors.cyan
-        : progress >= .70
-        ? NeonColors.yellow
-        : NeonColors.purple;
-
-    final left = 18.0;
-    final right = size.width - 18.0;
-    final top = 91.0;
-    final height = 10.0;
-
-    final background = RRect.fromRectAndRadius(
-      Rect.fromLTRB(left, top, right, top + height),
-      const Radius.circular(8),
-    );
-
-    canvas.drawRRect(
-      background,
-      Paint()..color = Colors.black.withValues(alpha: .48),
-    );
-
-    if (progress > 0) {
-      final fill = RRect.fromRectAndRadius(
-        Rect.fromLTRB(
-          left,
-          top,
-          left + (right - left) * progress,
-          top + height,
-        ),
-        const Radius.circular(8),
-      );
-
-      canvas.drawRRect(
-        fill,
-        Paint()
-          ..color = accent.withValues(alpha: .85)
-          ..maskFilter = progress >= .70
-              ? const MaskFilter.blur(BlurStyle.normal, 5)
-              : null,
-      );
-    }
-
-    final border = RRect.fromRectAndRadius(
-      Rect.fromLTRB(left, top, right, top + height),
-      const Radius.circular(8),
-    );
-
-    canvas.drawRRect(
-      border,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = powerStageActive ? 2 : 1
-        ..color = accent.withValues(alpha: powerStageActive ? .8 : .28),
-    );
-
-    _text(
-      canvas,
-      powerStageActive
-          ? 'POWER STAGE  ${powerStageTimer.ceil()}'
-          : 'POWER STAGE  ${powerStage.round()}%',
-      Offset(left, top + 13),
-      8,
-      accent,
-    );
-
-    if (powerStageAnnouncementTimer > 0 && !paused) {
-      final pulse = (powerStageAnnouncementTimer / 1.35).clamp(0.0, 1.0);
-
-      final glow = Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .12 + pulse * .18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
-
-      canvas.drawCircle(
-        Offset(size.width / 2, size.height * .50),
-        90 + (1 - pulse) * 35,
-        glow,
-      );
-
-      _centerText(
-        canvas,
-        'POWER STAGE',
-        Offset(size.width / 2, size.height * .50),
-        30 + (1 - pulse) * 8,
-        NeonColors.cyan,
-      );
-    }
-
-    if (powerStageActive) {
-      final barrierY = size.height * .875;
-
-      final barrier = Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .75)
-        ..strokeWidth = 4
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
-
-      canvas.drawLine(
-        Offset(10, barrierY),
-        Offset(size.width - 10, barrierY),
-        barrier,
-      );
-
-      canvas.drawLine(
-        Offset(10, barrierY),
-        Offset(size.width - 10, barrierY),
-        Paint()
-          ..color = Colors.white.withValues(alpha: .85)
-          ..strokeWidth = 1.5,
-      );
-    }
-  }
-
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
     _drawStageEvent(canvas, size);
-    _drawPowerStage(canvas, size);
+    _drawStageMechanic(canvas, size);
 
     if (combo >= 2 && !paused) {
       final double comboSize = combo >= 10
@@ -1921,14 +1741,12 @@ class _NeonGamePainter extends CustomPainter {
           ? 19.5
           : 18;
 
-      final comboHot = combo >= 10 || powerStage >= 70;
-
       _centerText(
         canvas,
         'COMBO x$combo',
         Offset(size.width / 2, 37),
         comboSize,
-        comboHot ? NeonColors.cyan : NeonColors.yellow,
+        NeonColors.yellow,
       );
     }
 
@@ -2089,11 +1907,7 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final width = powerStageActive
-        ? .88
-        : widePaddle
-        ? .31
-        : .23;
+    final width = widePaddle ? .31 : .23;
 
     final center = Offset(paddle * size.width, size.height * .905);
 
