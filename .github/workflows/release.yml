@@ -81,6 +81,39 @@ jobs:
           echo "OFFICIAL KEYSTORE: OK — private key recovers correctly"
           echo "OFFICIAL ALIAS: OK"
 
+      - name: Verify Release identity and signing configuration
+        run: |
+          set -e
+
+          echo "========== RELEASE IDENTITY =========="
+
+          VERSION_NAME=$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)
+          VERSION_CODE=$(sed -n 's/^version: [^+]*+\(.*\)/\1/p' pubspec.yaml)
+
+          test -n "$VERSION_NAME"
+          test -n "$VERSION_CODE"
+
+          echo "VERSION NAME: $VERSION_NAME"
+          echo "VERSION CODE: $VERSION_CODE"
+
+          test "$VERSION_NAME" != "0.0.0"
+          test "$VERSION_CODE" != "0"
+
+          echo
+          echo "========== OFFICIAL SIGNING CONFIG =========="
+
+          grep -n "val hasOfficialSigning = keystorePropertiesFile.exists()"             android/app/build.gradle.kts
+
+          grep -n 'signingConfig = if (hasOfficialSigning)'             android/app/build.gradle.kts
+
+          grep -n 'signingConfigs.getByName("release")'             android/app/build.gradle.kts
+
+          grep -n 'signingConfigs.getByName("debug")'             android/app/build.gradle.kts
+
+          echo
+          echo "RELEASE SIGNING LOGIC: VERIFIED"
+          echo "RELEASE VERSION: $VERSION_NAME+$VERSION_CODE"
+
       - name: Verify package
         run: |
           set -e
