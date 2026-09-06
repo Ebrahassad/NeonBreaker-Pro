@@ -202,36 +202,44 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildLogo() {
-    return Container(
-      width: 142,
-      height: 142,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(34),
-        boxShadow: [
-          BoxShadow(
-            color: NeonColors.cyan.withValues(alpha: .32),
-            blurRadius: 55,
-            spreadRadius: 12,
+    return Transform.translate(
+      offset: const Offset(0, -20),
+      child: Container(
+        width: 142,
+        height: 142,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: [
+            BoxShadow(
+              color: NeonColors.cyan.withValues(alpha: .42),
+              blurRadius: 30,
+              spreadRadius: 5,
+            ),
+            BoxShadow(
+              color: NeonColors.cyan.withValues(alpha: .28),
+              blurRadius: 58,
+              spreadRadius: 12,
+            ),
+            BoxShadow(
+              color: NeonColors.pink.withValues(alpha: .22),
+              blurRadius: 75,
+              spreadRadius: 10,
+            ),
+            BoxShadow(
+              color: NeonColors.cyan.withValues(alpha: .16),
+              blurRadius: 100,
+              spreadRadius: 18,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(34),
+          child: Image.asset(
+            'assets/icon/neonbreaker_icon.png',
+            width: 142,
+            height: 142,
+            fit: BoxFit.cover,
           ),
-          BoxShadow(
-            color: NeonColors.pink.withValues(alpha: .20),
-            blurRadius: 70,
-            spreadRadius: 8,
-          ),
-          BoxShadow(
-            color: NeonColors.cyan.withValues(alpha: .14),
-            blurRadius: 90,
-            spreadRadius: 16,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(34),
-        child: Image.asset(
-          'assets/icon/neonbreaker_icon.png',
-          width: 142,
-          height: 142,
-          fit: BoxFit.cover,
         ),
       ),
     );
@@ -357,6 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         child: Stack(
+          alignment: Alignment.center,
           children: [
             Positioned(
               left: 12,
@@ -377,21 +386,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            ElevatedButton.icon(
-              onPressed: action,
-              icon: Icon(
-                icon,
-                size: 32,
-                color: Colors.white,
-                shadows: const [
-                  Shadow(
-                    color: Color(0xAA003B55),
-                    blurRadius: 5,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              label: Text(
+
+            // PLAY stays exactly in the center of the button.
+            Center(
+              child: Text(
                 text,
                 style: const TextStyle(
                   color: Colors.white,
@@ -400,21 +398,43 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: 3,
                   shadows: [
                     Shadow(
-                      color: Color(0x99003B55),
+                      color: Color(0xAA003B55),
                       blurRadius: 5,
                       offset: Offset(0, 2),
                     ),
                   ],
                 ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                shadowColor: Colors.transparent,
-                elevation: 0,
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
+            ),
+
+            // Play icon is independent from the centered text.
+            Positioned(
+              left: 18,
+              child: IgnorePointer(
+                child: Icon(
+                  icon,
+                  size: 32,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Color(0xAA003B55),
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Invisible touch layer preserves the whole button action.
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: action,
                   borderRadius: BorderRadius.circular(20),
+                  splashColor: Colors.white.withValues(alpha: .16),
+                  highlightColor: Colors.white.withValues(alpha: .08),
                 ),
               ),
             ),

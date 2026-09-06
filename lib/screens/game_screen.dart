@@ -388,7 +388,7 @@ class _GameScreenState extends State<GameScreen>
           type = BrickType.steel;
         }
 
-        final hp = type == BrickType.steel ? min(3, 1 + widget.level ~/ 5) : 1;
+        final hp = type == BrickType.steel ? 2 + widget.level ~/ 5 : 1;
 
         _bricks.add(
           Brick(x: .065 + col * .125, y: .105 + row * .055, type: type, hp: hp),
@@ -404,11 +404,11 @@ class _GameScreenState extends State<GameScreen>
   // Balanced arcade speed:
   // a little snappier than before, with a gentle per-level ramp-up.
   double _initialHorizontalSpeed() {
-    return .42;
+    return .52;
   }
 
   double _initialVerticalSpeed() {
-    return .66;
+    return .82;
   }
 
   double _speedMultiplier() {
@@ -576,7 +576,11 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _checkPaddle(Ball ball) {
-    final paddleWidth = _widePaddle ? .31 : .23;
+    final paddleWidth = _powerStageActive
+        ? .88
+        : _widePaddle
+        ? .31
+        : .23;
 
     // نفس موضع المضرب المرسوم على الشاشة.
     const paddleY = .905;
@@ -719,7 +723,7 @@ class _GameScreenState extends State<GameScreen>
     // small levels can reach Power Stage without requiring an
     // unnecessarily high combo, while larger levels require more.
 
-    const targetCombo = 15;
+    const targetCombo = 12;
 
     final comboProgress = (_combo / targetCombo).clamp(0.0, 1.0);
 
@@ -779,14 +783,26 @@ class _GameScreenState extends State<GameScreen>
     for (final power in List<FallingPower>.from(_powers)) {
       power.y += dt * .23;
 
-      if (power.y > .94) {
-        final width = _widePaddle ? .30 : .22;
+      const paddleY = .905;
+      const paddleHalfHeight = .018;
+      const powerRadius = .026;
 
-        if ((power.x - _paddle).abs() < width / 2) {
-          _activatePower(power.type);
-          _powers.remove(power);
-          continue;
-        }
+      final paddleWidth = _powerStageActive
+          ? .88
+          : (_widePaddle ? .31 : .23);
+
+      final horizontalHit =
+          power.x + powerRadius >= _paddle - paddleWidth / 2 &&
+          power.x - powerRadius <= _paddle + paddleWidth / 2;
+
+      final verticalHit =
+          power.y + powerRadius >= paddleY - paddleHalfHeight &&
+          power.y - powerRadius <= paddleY + paddleHalfHeight;
+
+      if (horizontalHit && verticalHit) {
+        _activatePower(power.type);
+        _powers.remove(power);
+        continue;
       }
 
       if (power.y > 1.05) {
@@ -959,9 +975,84 @@ class _GameScreenState extends State<GameScreen>
     widget.save.saveLevelStars(widget.level, _earnedStars);
     widget.save.saveLevelCombo(widget.level, _bestCombo);
 
-    // Unlock the next level only after this level is actually
-    // completed.
-    widget.save.saveLevel(widget.level + 1);
+    // The next level requires at least 2 stars.
+    // One-star completion saves the result but does NOT unlock
+    // the next level. The player can use a rewarded ad to skip.
+    if (_earnedStars >= 2) {
+      widget.save.saveLevel(widget.level + 1);
+    }
+  }
+  void _nextLevel() {
+    // Two or more stars: unlock and enter the next level normally.
+    // One star: keep the level locked and offer rewarded-ad skip.
+    if (_earnedStars < 2) {
+      _watchAdToUnlockNextLevel();
+      return;
+    }
+
+    if (!mounted) return;
+
+    AdService.instance.maybeShowInterstitial();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(
+          save: widget.save,
+          level: widget.level + 1,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _enterFullscreen();
+      }
+    });
+  }
+
+
+  void _watchAdToUnlockNextLevel() {
+    if (!mounted || !_levelClear) return;
+
+    if (!AdService.instance.isRewardedReady) {
+      _showRewardUnavailableMessage();
+      return;
+    }
+
+    AdService.instance.showRewarded(
+      onReward: () {
+        if (!mounted || !_levelClear) return;
+
+        widget.save.saveLevel(widget.level + 1);
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => GameScreen(
+              save: widget.save,
+              level: widget.level + 1,
+            ),
+          ),
+        ).then((_) {
+          if (mounted) {
+            _enterFullscreen();
+          }
+        });
+      },
+    );
+  }
+
+  void _showRewardUnavailableMessage() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'الإعلان غير متاح حاليًا، حاول مرة أخرى لاحقًا.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
   }
 
   void _impact(double x, double y) {
@@ -1004,35 +1095,6 @@ class _GameScreenState extends State<GameScreen>
     });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      if (!_gameOver && !_levelClear) {
-        setState(() {
-          _paused = true;
-        });
-
-        widget.save.saveLevel(widget.level);
-        _controller.stop();
-      }
-    } else if (state == AppLifecycleState.resumed) {
-      if (_paused && !_gameOver && !_levelClear) {
-        setState(() {
-          _paused = false;
-        });
-        _controller.repeat();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _controller.dispose();
-    super.dispose();
-  }
-
   void _restartLevel() {
     AdService.instance.maybeShowInterstitial();
 
@@ -1041,32 +1103,6 @@ class _GameScreenState extends State<GameScreen>
       _controller.repeat();
     });
   }
-
-  void _nextLevel() {
-    void openNextLevel() {
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              GameScreen(save: widget.save, level: widget.level + 1),
-        ),
-      ).then((_) {
-        if (mounted) {
-          _enterFullscreen();
-        }
-      });
-    }
-
-    AdService.instance.maybeShowInterstitial();
-
-    openNextLevel();
-  }
-
-  // ----------------------------------------------------------
-  // MONETIZATION: OPTIONAL REWARDED-AD BOOSTS
-  // ----------------------------------------------------------
 
   void _watchAdToContinue() {
     if (_continueUsed) return;
@@ -1083,6 +1119,17 @@ class _GameScreenState extends State<GameScreen>
 
         _resetBalls();
         _controller.repeat();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('تمت إضافة قلب إضافي بنجاح!'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+        }
       },
     );
   }
@@ -1100,13 +1147,20 @@ class _GameScreenState extends State<GameScreen>
         });
 
         widget.save.saveLevelScore(widget.level, _score);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('تم منح المكافأة بنجاح!'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+        }
       },
     );
   }
-
-  // ----------------------------------------------------------
-  // RESULT SCREEN NAVIGATION
-  // ----------------------------------------------------------
 
   void _goHome() {
     AdService.instance.maybeShowInterstitial();
@@ -1117,44 +1171,45 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
+  
+  
+  
+  
+  
+  
+  
+
   Widget _resultNavigation() {
     final isWin = _levelClear;
+    final accent = isWin ? NeonColors.cyan : NeonColors.pink;
 
     return Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: .58),
+        color: Colors.black.withValues(alpha: .72),
         child: SafeArea(
           child: Center(
-            child: AnimatedScale(
-              scale: isWin ? 1.0 : 0.985,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutBack,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 24,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 390),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF090313),
-                      borderRadius: BorderRadius.circular(26),
-                      border: Border.all(
-                        color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                            .withValues(alpha: .85),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                              .withValues(alpha: .30),
-                          blurRadius: 35,
-                          spreadRadius: 2,
-                        ),
-                      ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF090313),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: accent.withValues(alpha: .9),
+                      width: 1.6,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .30),
+                        blurRadius: 36,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1162,8 +1217,8 @@ class _GameScreenState extends State<GameScreen>
                           isWin
                               ? Icons.emoji_events_rounded
                               : Icons.cancel_rounded,
-                          size: 44,
-                          color: isWin ? NeonColors.cyan : NeonColors.pink,
+                          size: 48,
+                          color: accent,
                         ),
 
                         const SizedBox(height: 6),
@@ -1172,22 +1227,20 @@ class _GameScreenState extends State<GameScreen>
                           isWin ? 'LEVEL CLEAR' : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 24,
+                            color: accent,
+                            fontSize: 25,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2,
-                            color: isWin ? NeonColors.cyan : NeonColors.pink,
                             shadows: [
                               Shadow(
-                                color:
-                                    (isWin ? NeonColors.cyan : NeonColors.pink)
-                                        .withValues(alpha: .80),
+                                color: accent.withValues(alpha: .8),
                                 blurRadius: 20,
                               ),
                             ],
                           ),
                         ),
 
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 4),
 
                         Text(
                           isWin
@@ -1196,26 +1249,25 @@ class _GameScreenState extends State<GameScreen>
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white60,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: .8,
                           ),
                         ),
 
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
 
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 14,
+                            vertical: 14,
+                            horizontal: 10,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: .035),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: (isWin ? NeonColors.cyan : NeonColors.pink)
-                                  .withValues(alpha: .12),
+                              color: accent.withValues(alpha: .15),
                             ),
                           ),
                           child: Row(
@@ -1230,20 +1282,26 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
 
                         if (isWin) ...[
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 18,
-                              vertical: 8,
+                              vertical: 9,
                             ),
                             decoration: BoxDecoration(
-                              color: NeonColors.yellow.withValues(alpha: .045),
+                              color: NeonColors.yellow.withValues(alpha: .05),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: NeonColors.yellow.withValues(alpha: .12),
+                                color: NeonColors.yellow.withValues(alpha: .18),
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: NeonColors.yellow.withValues(alpha: .12),
+                                  blurRadius: 18,
+                                ),
+                              ],
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1251,13 +1309,13 @@ class _GameScreenState extends State<GameScreen>
                                 3,
                                 (index) => Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
+                                    horizontal: 4,
                                   ),
                                   child: Icon(
                                     index < _earnedStars
                                         ? Icons.star_rounded
                                         : Icons.star_border_rounded,
-                                    size: 36,
+                                    size: 34,
                                     color: index < _earnedStars
                                         ? NeonColors.yellow
                                         : Colors.white24,
@@ -1275,23 +1333,19 @@ class _GameScreenState extends State<GameScreen>
                               color: NeonColors.yellow,
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
+                              letterSpacing: 1.4,
                             ),
                           ),
 
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 14),
 
+                          // Rewarded ad is ONLY for doubling the bonus.
                           if (!_doubleBonusUsed) ...[
-                            _resultButton(
-                              label: 'WATCH AD  •  DOUBLE BONUS',
-                              icon: Icons.ondemand_video_rounded,
-                              primary: false,
-                              accent: NeonColors.yellow,
-                              onPressed: _watchAdForDoubleBonus,
-                            ),
-                            const SizedBox(height: 10),
+                            _doubleRewardCard(),
+                            const SizedBox(height: 12),
                           ],
 
+                          // Main progression button.
                           _resultButton(
                             label: 'NEXT LEVEL',
                             icon: Icons.arrow_forward_rounded,
@@ -1309,14 +1363,8 @@ class _GameScreenState extends State<GameScreen>
                           ),
                         ] else ...[
                           if (!_continueUsed) ...[
-                            _resultButton(
-                              label: 'WATCH AD  •  EXTRA LIFE',
-                              icon: Icons.favorite_rounded,
-                              primary: false,
-                              accent: NeonColors.green,
-                              onPressed: _watchAdToContinue,
-                            ),
-                            const SizedBox(height: 10),
+                            _extraLifeCard(),
+                            const SizedBox(height: 12),
                           ],
 
                           _resultButton(
@@ -1341,6 +1389,206 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _doubleRewardCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _watchAdForDoubleBonus,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                NeonColors.yellow.withValues(alpha: .20),
+                NeonColors.yellow.withValues(alpha: .055),
+              ],
+            ),
+            border: Border.all(
+              color: NeonColors.yellow.withValues(alpha: .75),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: NeonColors.yellow.withValues(alpha: .32),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: NeonColors.yellow.withValues(alpha: .12),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: NeonColors.yellow.withValues(alpha: .12),
+                  border: Border.all(
+                    color: NeonColors.yellow.withValues(alpha: .70),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.yellow.withValues(alpha: .45),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.ondemand_video_rounded,
+                  color: NeonColors.yellow,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'DOUBLE REWARD',
+                      style: TextStyle(
+                        color: NeonColors.yellow,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'WATCH AD  •  2X BONUS',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: NeonColors.yellow,
+                size: 19,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _extraLifeCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _watchAdToContinue,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                NeonColors.green.withValues(alpha: .20),
+                NeonColors.green.withValues(alpha: .055),
+              ],
+            ),
+            border: Border.all(
+              color: NeonColors.green.withValues(alpha: .75),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: NeonColors.green.withValues(alpha: .30),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: NeonColors.green.withValues(alpha: .12),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: NeonColors.green.withValues(alpha: .12),
+                  border: Border.all(
+                    color: NeonColors.green.withValues(alpha: .70),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.green.withValues(alpha: .42),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  color: NeonColors.green,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EXTRA LIFE',
+                      style: TextStyle(
+                        color: NeonColors.green,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'WATCH AD  •  GET 1 LIFE',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: NeonColors.green,
+                size: 19,
+              ),
+            ],
           ),
         ),
       ),
@@ -1492,13 +1740,9 @@ class _GameScreenState extends State<GameScreen>
                 return;
               }
 
-              if (_gameOver) {
-                _restartLevel();
-                return;
-              }
-
-              if (_levelClear) {
-                _nextLevel();
+              // Result screen owns all taps while visible.
+              // Do not let the underlying game gesture restart/advance the level.
+              if (_gameOver || _levelClear) {
                 return;
               }
 
@@ -1734,24 +1978,6 @@ class _NeonGamePainter extends CustomPainter {
       34 + (1 - progress) * 16,
       border,
     );
-
-    final painter = TextPainter(
-      text: const TextSpan(
-        text: 'NEON WAVE',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 2,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    painter.paint(
-      canvas,
-      Offset(size.width / 2 - painter.width / 2, size.height * .81),
-    );
   }
 
   void _drawStageIdentity(Canvas canvas, Size size) {
@@ -1884,29 +2110,6 @@ class _NeonGamePainter extends CustomPainter {
         NeonColors.cyan,
       );
     }
-
-    if (powerStageActive) {
-      final barrierY = size.height * .875;
-
-      final barrier = Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .75)
-        ..strokeWidth = 4
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
-
-      canvas.drawLine(
-        Offset(10, barrierY),
-        Offset(size.width - 10, barrierY),
-        barrier,
-      );
-
-      canvas.drawLine(
-        Offset(10, barrierY),
-        Offset(size.width - 10, barrierY),
-        Paint()
-          ..color = Colors.white.withValues(alpha: .85)
-          ..strokeWidth = 1.5,
-      );
-    }
   }
 
   void _drawHud(Canvas canvas, Size size) {
@@ -1982,6 +2185,7 @@ class _NeonGamePainter extends CustomPainter {
       }
 
       const gameplayTopOffset = .055;
+
       final center = Offset(
         brick.x * size.width,
         (brick.y + gameplayTopOffset) * size.height,
@@ -1996,71 +2200,306 @@ class _NeonGamePainter extends CustomPainter {
         height: height,
       );
 
+      final radius = Radius.circular(7);
+      final rrect = RRect.fromRectAndRadius(rect, radius);
       final color = _brickColor(brick);
 
-      final glow = Paint()
-        ..color = color.withValues(alpha: .52)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+      // ----------------------------------------------------------
+      // SOFT NEON AURA
+      // ----------------------------------------------------------
+      final aura = Paint()
+        ..color = color.withValues(alpha: brick.flashing ? .70 : .30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+
+      canvas.drawRRect(rrect, aura);
+
+      // ----------------------------------------------------------
+      // DARK GLASS BODY
+      // ----------------------------------------------------------
+      final bodyColor = Color.lerp(
+        Colors.black,
+        color,
+        brick.type == BrickType.steel ? .28 : .58,
+      )!;
 
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
-        glow,
-      );
-
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
+        rrect,
         Paint()
           ..style = PaintingStyle.fill
-          ..color = color.withValues(alpha: .58),
+          ..color = bodyColor.withValues(alpha: .92),
+      );
+
+      // Inner colored glass layer.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.deflate(1.2), const Radius.circular(5.5)),
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = color.withValues(alpha: .24),
+      );
+
+      // ----------------------------------------------------------
+      // TOP GLASS HIGHLIGHT
+      // ----------------------------------------------------------
+      final highlightRect = Rect.fromLTRB(
+        rect.left + 3,
+        rect.top + 2,
+        rect.right - 3,
+        rect.top + height * .34,
       );
 
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect.deflate(1.5), const Radius.circular(6)),
+        RRect.fromRectAndRadius(highlightRect, const Radius.circular(4)),
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withValues(alpha: .34),
+              Colors.white.withValues(alpha: .02),
+            ],
+          ).createShader(highlightRect),
+      );
+
+      // ----------------------------------------------------------
+      // INNER NEON EDGE
+      // ----------------------------------------------------------
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.deflate(1), const Radius.circular(6)),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
-          ..color = Colors.white.withValues(alpha: .72),
+          ..strokeWidth = 1.1
+          ..color = Colors.white.withValues(alpha: .48),
       );
-      // Bright neon edge.
+
+      // Main neon border.
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect.deflate(.5), const Radius.circular(7)),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2
-          ..color = color.withValues(alpha: .90)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+          ..strokeWidth = brick.flashing ? 2.8 : 1.8
+          ..color = brick.flashing ? Colors.white : color.withValues(alpha: .95)
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            brick.flashing ? 5 : 2.5,
+          ),
       );
 
-      if (brick.type == BrickType.explosive) {
-        _text(
-          canvas,
-          '✦',
-          Offset(center.dx - 6, center.dy - 8),
-          13,
-          Colors.white,
-        );
+      // ----------------------------------------------------------
+      // TYPE-SPECIFIC DESIGN
+      // ----------------------------------------------------------
+      switch (brick.type) {
+        case BrickType.normal:
+          // Small central glass core.
+          canvas.drawCircle(
+            center,
+            min(width, height) * .13,
+            Paint()
+              ..color = color.withValues(alpha: .18)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+          );
+
+          canvas.drawCircle(
+            center,
+            min(width, height) * .055,
+            Paint()..color = Colors.white.withValues(alpha: .75),
+          );
+          break;
+
+        case BrickType.explosive:
+          _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
+          break;
+
+        case BrickType.steel:
+          _drawSteelBrickIcon(canvas, center, min(width, height), brick.hp);
+          break;
+
+        case BrickType.bonus:
+          _drawBonusBrickIcon(canvas, center, min(width, height));
+          break;
       }
 
-      if (brick.type == BrickType.steel) {
-        _text(
-          canvas,
-          '${brick.hp}',
-          Offset(center.dx - 4, center.dy - 7),
-          11,
-          Colors.white,
-        );
-      }
-
-      if (brick.type == BrickType.bonus) {
-        _text(
-          canvas,
-          '+',
-          Offset(center.dx - 5, center.dy - 8),
-          14,
-          Colors.white,
+      // ----------------------------------------------------------
+      // HIT FLASH
+      // ----------------------------------------------------------
+      if (brick.flashing) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = Colors.white.withValues(alpha: .18),
         );
       }
     }
+  }
+
+  void _drawExplosiveBrickIcon(
+    Canvas canvas,
+    Offset center,
+    double size,
+    Color color,
+  ) {
+    final glow = Paint()
+      ..color = color.withValues(alpha: .65)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    canvas.drawCircle(center, size * .25, glow);
+
+    final path = Path();
+    const points = 8;
+
+    for (int i = 0; i < points; i++) {
+      final angle = -pi / 2 + i * pi / 4;
+      final radius = i.isEven ? size * .25 : size * .11;
+
+      final point = Offset(
+        center.dx + cos(angle) * radius,
+        center.dy + sin(angle) * radius,
+      );
+
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+
+    path.close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = color,
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
+    );
+
+    // Explosion core.
+    canvas.drawCircle(center, size * .075, Paint()..color = Colors.white);
+
+    // Small sparks.
+    final sparkPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .85)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < 4; i++) {
+      final angle = i * pi / 2 + pi / 4;
+      final inner = size * .27;
+      final outer = size * .36;
+
+      canvas.drawLine(
+        Offset(center.dx + cos(angle) * inner, center.dy + sin(angle) * inner),
+        Offset(center.dx + cos(angle) * outer, center.dy + sin(angle) * outer),
+        sparkPaint,
+      );
+    }
+  }
+
+  void _drawSteelBrickIcon(Canvas canvas, Offset center, double size, int hp) {
+    final shield = Path()
+      ..moveTo(center.dx, center.dy - size * .29)
+      ..lineTo(center.dx + size * .23, center.dy - size * .17)
+      ..lineTo(center.dx + size * .18, center.dy + size * .14)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + size * .31,
+        center.dx - size * .18,
+        center.dy + size * .14,
+      )
+      ..lineTo(center.dx - size * .23, center.dy - size * .17)
+      ..close();
+
+    canvas.drawPath(
+      shield,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..shader =
+            const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFE7EEF2), Color(0xFF78909C), Color(0xFF263238)],
+            ).createShader(
+              Rect.fromCenter(center: center, width: size, height: size),
+            ),
+    );
+
+    canvas.drawPath(
+      shield,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .80),
+    );
+
+    final hpText = TextPainter(
+      text: TextSpan(
+        text: '$hp',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    hpText.paint(
+      canvas,
+      Offset(center.dx - hpText.width / 2, center.dy - hpText.height / 2),
+    );
+  }
+
+  void _drawBonusBrickIcon(Canvas canvas, Offset center, double size) {
+    const points = 5;
+    final path = Path();
+
+    for (int i = 0; i < points * 2; i++) {
+      final angle = -pi / 2 + i * pi / points;
+      final radius = i.isEven ? size * .30 : size * .13;
+
+      final point = Offset(
+        center.dx + cos(angle) * radius,
+        center.dy + sin(angle) * radius,
+      );
+
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+
+    path.close();
+
+    final glow = Paint()
+      ..color = NeonColors.yellow.withValues(alpha: .60)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+
+    canvas.drawPath(path, glow);
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = NeonColors.yellow,
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
+    );
+
+    canvas.drawCircle(center, size * .055, Paint()..color = Colors.white);
   }
 
   Color _brickColor(Brick brick) {
@@ -2089,140 +2528,280 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final width = powerStageActive
-        ? .88
-        : widePaddle
-        ? .31
-        : .23;
-
     final center = Offset(paddle * size.width, size.height * .905);
 
+    final width = powerStageActive
+        ? size.width * .88
+        : widePaddle
+            ? size.width * .31
+            : size.width * .23;
+
+    final height = size.height * .036;
     final rect = Rect.fromCenter(
       center: center,
-      width: size.width * width,
-      height: size.height * .018,
+      width: width,
+      height: height,
     );
 
-    if (shield) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(size.width / 2, size.height * .93),
-          width: size.width * .78,
-          height: size.height * .10,
-        ),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
-          ..color = NeonColors.green.withValues(alpha: .28)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-      );
-    }
+    // المضرب الرئيسي
+    final glow = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect.inflate(11), const Radius.circular(12)),
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .38)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      glow,
     );
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(9)),
-      Paint()..color = Colors.white,
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      Paint()..color = NeonColors.cyan,
     );
 
-    final bodyRRect = RRect.fromRectAndRadius(
-      rect.deflate(2),
-      const Radius.circular(7),
+    // شريط داخلي يعطي المضرب شكلاً أجمل
+    final inner = Rect.fromCenter(
+      center: Offset(center.dx, center.dy - height * .12),
+      width: width * .72,
+      height: height * .22,
     );
 
     canvas.drawRRect(
-      bodyRRect,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            NeonColors.cyan,
-            Colors.white,
-            widePaddle ? NeonColors.green : NeonColors.purple,
-          ],
-        ).createShader(rect),
+      RRect.fromRectAndRadius(inner, const Radius.circular(5)),
+      Paint()..color = Colors.white.withValues(alpha: .85),
     );
-
-    // Glassy top highlight so the paddle reads as a solid 3D bar.
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(center.dx, center.dy - rect.height * .22),
-          width: rect.width * .92,
-          height: rect.height * .32,
-        ),
-        const Radius.circular(4),
-      ),
-      Paint()..color = Colors.white.withValues(alpha: .55),
-    );
-
-    if (laser) {
-      final laserPaint = Paint()
-        ..color = NeonColors.orange.withValues(alpha: .9)
-        ..strokeWidth = 3
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
-
-      canvas.drawLine(
-        Offset(center.dx, center.dy - 6),
-        Offset(center.dx, size.height * .11),
-        laserPaint,
-      );
-    }
 
     if (doublePaddle) {
-      final second = Offset(size.width - center.dx, center.dy);
+      // DOUBLE PADDLE — Professional Neon Design
+      final sideWidth = size.width * .18;
+      final sideHeight = size.height * .030;
 
-      final secondRect = Rect.fromCenter(
-        center: second,
-        width: rect.width * .75,
-        height: rect.height,
+      final leftCenter = Offset(
+        size.width * .18,
+        size.height * .875,
       );
 
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(secondRect, const Radius.circular(9)),
-        Paint()
-          ..color = NeonColors.pink
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+      final rightCenter = Offset(
+        size.width * .82,
+        size.height * .845,
       );
 
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(secondRect, const Radius.circular(9)),
-        Paint()..color = NeonColors.pink,
-      );
-    }
-  }
+      void drawNeonPaddle(Offset c, Color color, double scale) {
+        final w = sideWidth * scale;
+        final h = sideHeight;
 
-  void _drawBalls(Canvas canvas, Size size) {
-    for (final ball in balls) {
-      for (int i = ball.trail.length - 1; i >= 0; i--) {
-        final p = ball.trail[i];
+        final rect = Rect.fromCenter(
+          center: c,
+          width: w,
+          height: h,
+        );
 
-        final alpha = ((ball.trail.length - i) / ball.trail.length) * .25;
+        // Outer neon glow
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect.inflate(5),
+            const Radius.circular(14),
+          ),
+          Paint()
+            ..color = color.withValues(alpha: .12)
+            ..maskFilter = const MaskFilter.blur(
+              BlurStyle.normal,
+              18,
+            ),
+        );
+
+        // Strong neon glow
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect.inflate(2),
+            const Radius.circular(12),
+          ),
+          Paint()
+            ..color = color.withValues(alpha: .35)
+            ..maskFilter = const MaskFilter.blur(
+              BlurStyle.normal,
+              9,
+            ),
+        );
+
+        // Main body
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            const Radius.circular(10),
+          ),
+          Paint()..color = color,
+        );
+
+        // Dark inner panel
+        final inner = Rect.fromCenter(
+          center: Offset(c.dx, c.dy + 1),
+          width: w * .82,
+          height: h * .42,
+        );
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            inner,
+            const Radius.circular(5),
+          ),
+          Paint()..color = const Color(0xFF09051A),
+        );
+
+        // Bright center energy line
+        final energy = Paint()
+          ..color = Colors.white.withValues(alpha: .95)
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            3,
+          );
+
+        canvas.drawLine(
+          Offset(c.dx - w * .32, c.dy),
+          Offset(c.dx + w * .32, c.dy),
+          energy,
+        );
+
+        // Small neon end caps
+        final capPaint = Paint()..color = Colors.white;
 
         canvas.drawCircle(
-          Offset(p.dx * size.width, p.dy * size.height),
-          4 + (ball.trail.length - i) * .4,
-          Paint()
-            ..color = (ball.fire ? NeonColors.orange : NeonColors.cyan)
-                .withValues(alpha: alpha)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+          Offset(c.dx - w * .43, c.dy),
+          2.2,
+          capPaint,
+        );
+
+        canvas.drawCircle(
+          Offset(c.dx + w * .43, c.dy),
+          2.2,
+          capPaint,
         );
       }
 
-      final center = Offset(ball.x * size.width, ball.y * size.height);
+      // Three-level visual composition:
+      // left = upper, right = higher, main = lowest.
+      drawNeonPaddle(leftCenter, NeonColors.pink, 1.0);
+      drawNeonPaddle(rightCenter, NeonColors.yellow, 1.0);
 
-      final color = ball.fire ? NeonColors.orange : NeonColors.cyan;
+      // Energy bridge between the two bonus paddles
+      final bridgePaint = Paint()
+        ..color = NeonColors.purple.withValues(alpha: .22)
+        ..strokeWidth = 1.5
+        ..maskFilter = const MaskFilter.blur(
+          BlurStyle.normal,
+          7,
+        );
+
+      canvas.drawLine(
+        Offset(
+          leftCenter.dx + sideWidth * .48,
+          leftCenter.dy,
+        ),
+        Offset(
+          rightCenter.dx - sideWidth * .48,
+          rightCenter.dy,
+        ),
+        bridgePaint,
+      );
+    }
+  }
+  void _drawBalls(Canvas canvas, Size size) {
+    for (final ball in balls) {
+      final color =
+          ball.fire ? NeonColors.orange : NeonColors.cyan;
+
+      // ─────────────────────────────────────────────
+      // PREMIUM NEON TRAIL
+      // ─────────────────────────────────────────────
+      for (int i = ball.trail.length - 1; i >= 0; i--) {
+        final p = ball.trail[i];
+
+        final t = (ball.trail.length - i) /
+            ball.trail.length;
+
+        final alpha = t * .20;
+        final trailRadius = 2.5 + t * 5.5;
+
+        // Soft outer trail glow.
+        canvas.drawCircle(
+          Offset(
+            p.dx * size.width,
+            p.dy * size.height,
+          ),
+          trailRadius + 5,
+          Paint()
+            ..color = color.withValues(alpha: alpha * .45)
+            ..maskFilter = const MaskFilter.blur(
+              BlurStyle.normal,
+              10,
+            ),
+        );
+
+        // Bright inner trail.
+        canvas.drawCircle(
+          Offset(
+            p.dx * size.width,
+            p.dy * size.height,
+          ),
+          trailRadius,
+          Paint()
+            ..color = color.withValues(alpha: alpha),
+        );
+      }
+
+      final center = Offset(
+        ball.x * size.width,
+        ball.y * size.height,
+      );
+
+      // ─────────────────────────────────────────────
+      // LARGE ATMOSPHERIC GLOW
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        center,
+        25,
+        Paint()
+          ..color = color.withValues(alpha: .10)
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            20,
+          ),
+      );
 
       canvas.drawCircle(
         center,
-        18,
+        20,
         Paint()
-          ..color = color.withValues(alpha: .28)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+          ..color = color.withValues(alpha: .20)
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            12,
+          ),
+      );
+
+      // ─────────────────────────────────────────────
+      // NEON OUTER RING
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        center,
+        13,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..color = color.withValues(alpha: .95)
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            3,
+          ),
+      );
+
+      // ─────────────────────────────────────────────
+      // CORE — 3D RADIAL GRADIENT
+      // ─────────────────────────────────────────────
+      final coreRect = Rect.fromCircle(
+        center: center,
+        radius: 11,
       );
 
       canvas.drawCircle(
@@ -2230,17 +2809,83 @@ class _NeonGamePainter extends CustomPainter {
         11,
         Paint()
           ..shader = RadialGradient(
-            center: const Alignment(-.35, -.35),
-            colors: [Colors.white, color, color.withValues(alpha: .85)],
-            stops: const [0.0, .55, 1.0],
-          ).createShader(Rect.fromCircle(center: center, radius: 11)),
+            center: const Alignment(-.38, -.42),
+            radius: 1.0,
+            colors: [
+              Colors.white,
+              color.withValues(alpha: .98),
+              color.withValues(alpha: .90),
+              const Color(0xFF050014),
+            ],
+            stops: const [
+              0.0,
+              .28,
+              .68,
+              1.0,
+            ],
+          ).createShader(coreRect),
+      );
+
+      // ─────────────────────────────────────────────
+      // INNER ENERGY CORE
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        Offset(
+          center.dx + 1,
+          center.dy + 1,
+        ),
+        5.2,
+        Paint()
+          ..color = Colors.white.withValues(alpha: .18)
+          ..maskFilter = const MaskFilter.blur(
+            BlurStyle.normal,
+            4,
+          ),
+      );
+
+      // ─────────────────────────────────────────────
+      // SPECULAR HIGHLIGHT
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        Offset(
+          center.dx - 3.6,
+          center.dy - 3.8,
+        ),
+        3.1,
+        Paint()
+          ..color = Colors.white.withValues(alpha: .96),
       );
 
       canvas.drawCircle(
-        Offset(center.dx - 3.2, center.dy - 3.2),
-        3,
-        Paint()..color = Colors.white.withValues(alpha: .9),
+        Offset(
+          center.dx - 4.5,
+          center.dy - 4.7,
+        ),
+        1.35,
+        Paint()..color = Colors.white,
       );
+
+      // ─────────────────────────────────────────────
+      // FIRE BALL EXTRA CORE
+      // ─────────────────────────────────────────────
+      if (ball.fire) {
+        canvas.drawCircle(
+          center,
+          7,
+          Paint()
+            ..color = Colors.yellow.withValues(alpha: .28)
+            ..maskFilter = const MaskFilter.blur(
+              BlurStyle.normal,
+              5,
+            ),
+        );
+
+        canvas.drawCircle(
+          center,
+          3.5,
+          Paint()..color = Colors.yellow,
+        );
+      }
     }
   }
 
