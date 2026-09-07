@@ -840,7 +840,7 @@ class _GameScreenState extends State<GameScreen>
   void _activatePowerStage() {
     _powerStage = 100;
     _powerStageActive = true;
-    _powerStageTimer = 8.0;
+    _powerStageTimer = 5.0;
     _powerStageAnnouncementTimer = 1.35;
 
     // Power Stage uses the extra-wide paddle as its defensive effect.
@@ -1159,16 +1159,6 @@ class _GameScreenState extends State<GameScreen>
                 Icon(Icons.lock_rounded, color: NeonColors.yellow, size: 46),
                 const SizedBox(height: 10),
                 const Text(
-                  'You need at least 2 stars to unlock the next level',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
                   'You earned ⭐. You need ⭐⭐ to unlock the next level.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -1202,15 +1192,6 @@ class _GameScreenState extends State<GameScreen>
                 ),
 
                 const SizedBox(height: 10),
-
-                _resultButton(
-                  label: 'Exit',
-                  icon: Icons.close_rounded,
-                  primary: false,
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                ),
 
                 const SizedBox(height: 10),
 
@@ -1418,7 +1399,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('Reward doubled! +2 ❤️'),
+                content: Text('Bonus reward! +1 ❤️'),
                 duration: Duration(seconds: 2),
               ),
             );
