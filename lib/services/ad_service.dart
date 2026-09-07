@@ -44,6 +44,7 @@ class AdService {
           _initialized = true;
           _loadInterstitial();
           _loadRewarded();
+          _loadBanner();
         },
         onFailed: (error, message) {
           _initialized = false;
@@ -68,6 +69,18 @@ class AdService {
     } catch (_) {
       _interstitialReady = false;
     }
+  }
+
+  void _loadBanner() {
+    if (!_initialized) return;
+
+    try {
+      UnityAds.load(
+        placementId: bannerPlacementId,
+        onComplete: (placementId) {},
+        onFailed: (placementId, error, message) {},
+      );
+    } catch (_) {}
   }
 
   void _loadRewarded() {

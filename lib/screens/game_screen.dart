@@ -124,7 +124,6 @@ class _GameScreenState extends State<GameScreen>
   bool _laser = false;
   bool _doublePaddle = false;
 
-  bool _continueUsed = false;
   bool _doubleBonusUsed = false;
   bool _stageMechanicActive = false;
   double _stageMechanicTimer = 0;
@@ -208,7 +207,6 @@ class _GameScreenState extends State<GameScreen>
     _laser = false;
     _doublePaddle = false;
 
-    _continueUsed = false;
     _doubleBonusUsed = false;
 
     _wideTimer = 0;
@@ -632,7 +630,7 @@ class _GameScreenState extends State<GameScreen>
         ? .31
         : .23;
 
-    // نفس موضع المضرب المرسوم على الشاشة.
+    // Same position as the paddle drawn on screen.
     const paddleY = .905;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
@@ -643,13 +641,13 @@ class _GameScreenState extends State<GameScreen>
     final horizontalHit =
         ball.x + ballRadius >= left && ball.x - ballRadius <= right;
 
-    // نتحقق من سطح المضرب نفسه، وليس منطقة بعيدة فوقه.
+    // Check the actual paddle surface, not an area far above it.
     final verticalHit =
         ball.y + ballRadius >= paddleY - paddleHalfHeight &&
         ball.y - ballRadius <= paddleY + paddleHalfHeight;
 
     if (ball.vy > 0 && horizontalHit && verticalHit) {
-      // ضع الكرة ملاصقة مباشرة للسطح العلوي للمضرب.
+      // Place the ball directly against the top surface of the paddle.
       ball.y = paddleY - ballRadius - .018;
 
       final relative = ((ball.x - _paddle) / (paddleWidth / 2)).clamp(
@@ -657,11 +655,11 @@ class _GameScreenState extends State<GameScreen>
         1.0,
       );
 
-      // ارتداد متوسط وثابت.
+      // Moderate and consistent bounce.
       const maxHorizontal = .42;
       ball.vx = relative * maxHorizontal;
 
-      // لا تسمح بمسار شبه عمودي.
+      // Do not allow an almost vertical trajectory.
       if (ball.vx.abs() < .12) {
         ball.vx = ball.vx >= 0 ? .12 : -.12;
       }
@@ -892,7 +890,7 @@ class _GameScreenState extends State<GameScreen>
       const paddleHalfHeight = .018;
       const powerRadius = .026;
 
-      final paddleWidth = _powerStageActive ? .88 : (_widePaddle ? .31 : .23);
+      final paddleWidth = _powerStageActive ? .70 : (_widePaddle ? .31 : .23);
 
       final horizontalHit =
           power.x + powerRadius >= _paddle - paddleWidth / 2 &&
@@ -1161,7 +1159,7 @@ class _GameScreenState extends State<GameScreen>
                 Icon(Icons.lock_rounded, color: NeonColors.yellow, size: 46),
                 const SizedBox(height: 10),
                 const Text(
-                  'تحتاج نجمتين على الأقل لفتح المرحلة',
+                  'You need at least 2 stars to unlock the next level',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
@@ -1171,7 +1169,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'حصلت على نجمة واحدة. يمكنك إعادة المرحلة أو تخطي الشرط بمشاهدة إعلان.',
+                  'You earned ⭐. You need ⭐⭐ to unlock the next level.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white70,
@@ -1182,7 +1180,7 @@ class _GameScreenState extends State<GameScreen>
                 const SizedBox(height: 20),
 
                 _resultButton(
-                  label: 'شاهد إعلان للتخطي',
+                  label: 'Watch Ad to Skip',
                   icon: Icons.ondemand_video_rounded,
                   primary: true,
                   onPressed: () {
@@ -1194,7 +1192,7 @@ class _GameScreenState extends State<GameScreen>
                 const SizedBox(height: 10),
 
                 _resultButton(
-                  label: 'إعادة المرحلة',
+                  label: 'Replay Level',
                   icon: Icons.replay_rounded,
                   primary: false,
                   onPressed: () {
@@ -1206,7 +1204,7 @@ class _GameScreenState extends State<GameScreen>
                 const SizedBox(height: 10),
 
                 _resultButton(
-                  label: 'خروج',
+                  label: 'Exit',
                   icon: Icons.close_rounded,
                   primary: false,
                   onPressed: () {
@@ -1217,7 +1215,7 @@ class _GameScreenState extends State<GameScreen>
                 const SizedBox(height: 10),
 
                 _resultButton(
-                  label: 'العودة إلى شاشة البداية',
+                  label: 'Back to Home',
                   icon: Icons.home_rounded,
                   primary: false,
                   onPressed: () {
@@ -1279,7 +1277,9 @@ class _GameScreenState extends State<GameScreen>
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
-          content: Text('الإعلان غير متاح حاليًا، حاول مرة أخرى لاحقًا.'),
+          content: Text(
+            'Ad is not available right now. Please try again later.',
+          ),
           duration: Duration(seconds: 3),
         ),
       );
@@ -1335,15 +1335,13 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _watchAdToContinue() {
-    if (_continueUsed) return;
-
     if (!AdService.instance.isRewardedReady) {
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
             const SnackBar(
-              content: Text('الإعلان غير متوفر حاليًا'),
+              content: Text('Ad is not available right now.'),
               duration: Duration(seconds: 2),
             ),
           );
@@ -1356,7 +1354,6 @@ class _GameScreenState extends State<GameScreen>
         if (!mounted || !_gameOver) return;
 
         setState(() {
-          _continueUsed = true;
           _gameOver = false;
           _lives = 1;
         });
@@ -1378,7 +1375,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('تم منحك محاولة أخرى'),
+                content: Text('You got another chance!'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1396,7 +1393,7 @@ class _GameScreenState extends State<GameScreen>
           ..hideCurrentSnackBar()
           ..showSnackBar(
             const SnackBar(
-              content: Text('الإعلان غير متوفر حاليًا'),
+              content: Text('Ad is not available right now.'),
               duration: Duration(seconds: 2),
             ),
           );
@@ -1413,7 +1410,7 @@ class _GameScreenState extends State<GameScreen>
           _score += _bonusScore;
         });
 
-        widget.save.addExtraLives(2);
+        widget.save.addExtraLives(1);
         widget.save.saveLevelScore(widget.level, _score);
 
         if (mounted) {
@@ -1421,7 +1418,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('تمت مضاعفة المكافأة! +2 ❤️'),
+                content: Text('Reward doubled! +2 ❤️'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1624,7 +1621,7 @@ class _GameScreenState extends State<GameScreen>
                             onPressed: _restartLevel,
                           ),
                         ] else ...[
-                          if (!_continueUsed) ...[
+                          if (_gameOver) ...[
                             _extraLifeCard(),
                             const SizedBox(height: 12),
                           ],
@@ -2769,7 +2766,7 @@ class _NeonGamePainter extends CustomPainter {
     final center = Offset(paddle * size.width, size.height * .905);
 
     final width = powerStageActive
-        ? size.width * .88
+        ? size.width * .70
         : widePaddle
         ? size.width * .31
         : size.width * .23;
@@ -2777,7 +2774,7 @@ class _NeonGamePainter extends CustomPainter {
     final height = size.height * .036;
     final rect = Rect.fromCenter(center: center, width: width, height: height);
 
-    // المضرب الرئيسي
+    // Main paddle
     final glow = Paint()
       ..color = NeonColors.cyan.withValues(alpha: .28)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
@@ -2792,7 +2789,7 @@ class _NeonGamePainter extends CustomPainter {
       Paint()..color = NeonColors.cyan,
     );
 
-    // شريط داخلي يعطي المضرب شكلاً أجمل
+    // Inner bar gives the paddle a cleaner look.
     final inner = Rect.fromCenter(
       center: Offset(center.dx, center.dy - height * .12),
       width: width * .72,
