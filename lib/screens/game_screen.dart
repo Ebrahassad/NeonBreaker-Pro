@@ -84,7 +84,6 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _controller;
-  Duration? _lastFrameDuration;
 
   final Random _random = Random();
 
@@ -93,8 +92,6 @@ class _GameScreenState extends State<GameScreen>
   final List<Ball> _balls = [];
   final List<Brick> _bricks = [];
 
-  double _brickMoveOffset = 0.0;
-  double _brickMoveDirection = 1.0;
   List<Brick> _savedBricks = [];
   final List<FallingPower> _powers = [];
   final List<Spark> _sparks = [];
@@ -182,8 +179,6 @@ class _GameScreenState extends State<GameScreen>
   void _createLevel() {
     _balls.clear();
     _bricks.clear();
-    _brickMoveOffset = 0.0;
-    _brickMoveDirection = 1.0;
     _powers.clear();
     _sparks.clear();
 
@@ -207,7 +202,6 @@ class _GameScreenState extends State<GameScreen>
     _powerStageAnnouncementTimer = 0;
 
     _paused = false;
-    _lastFrameDuration = null;
     _gameOver = false;
     _levelClear = false;
 
@@ -479,73 +473,17 @@ class _GameScreenState extends State<GameScreen>
     return levelSpeed;
   }
 
-  void _updateBrickMovement(double dt) {
-    // Very simple horizontal movement starting from level 8.
-    if (widget.level < 8 || _bricks.isEmpty) {
-      return;
-    }
-
-    final movingBricks = _bricks.where((brick) => brick.alive).toList()
-      ..sort((a, b) => a.x.compareTo(b.x));
-
-    if (movingBricks.isEmpty) {
-      return;
-    }
-
-    // Small, calm movement range.
-    const limit = 0.025;
-    const speed = 0.00045;
-    const halfBrickWidth = .054;
-    const leftSafeEdge = .060;
-    const rightSafeEdge = .940;
-
-    final minX = movingBricks.first.x;
-    final maxX = movingBricks.last.x;
-
-    // Move at a constant, very gentle speed.
-    var proposedOffset =
-        _brickMoveOffset + speed * (dt / 0.016) * _brickMoveDirection;
-
-    proposedOffset = proposedOffset.clamp(-limit, limit);
-
-    // Keep the whole formation safely inside the screen.
-    final proposedLeftEdge = minX + proposedOffset - halfBrickWidth;
-    final proposedRightEdge = maxX + proposedOffset + halfBrickWidth;
-
-    if (proposedRightEdge >= rightSafeEdge) {
-      proposedOffset = rightSafeEdge - maxX - halfBrickWidth;
-      _brickMoveDirection = -1.0;
-    } else if (proposedLeftEdge <= leftSafeEdge) {
-      proposedOffset = leftSafeEdge - minX + halfBrickWidth;
-      _brickMoveDirection = 1.0;
-    }
-
-    _brickMoveOffset = proposedOffset.clamp(-limit, limit);
-  }
-
   void _tick() {
     if (!mounted || _paused || _gameOver || _levelClear) {
       return;
     }
 
-    final currentDuration = _controller.lastElapsedDuration;
-
-    final rawDt = currentDuration == null || _lastFrameDuration == null
-        ? .016
-        : (currentDuration - _lastFrameDuration!).inMicroseconds / 1000000.0;
-
-    _lastFrameDuration = currentDuration;
-
-    // Keep physics stable during occasional rendering hitches.
-    // Speed does not increase during the level.
-    final dt = rawDt.clamp(0.008, 0.024);
-
+    final dt = .016;
     var shouldCompleteLevel = false;
 
     setState(() {
       _stageElapsed += dt;
       _updateTimers(dt);
-      _updateBrickMovement(dt);
       _updateBalls(dt);
       _updatePowers(dt);
       _updateSparks(dt);
@@ -745,7 +683,7 @@ class _GameScreenState extends State<GameScreen>
         : .23;
 
     // Same position as the paddle drawn on screen.
-    const paddleY = .905;
+    const paddleY = .785;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
 
@@ -795,8 +733,8 @@ class _GameScreenState extends State<GameScreen>
     const paddleHalfWidth = .09;
     const paddleHalfHeight = .015;
 
-    const leftY = .875;
-    const rightY = .845;
+    const leftY = .565;
+    const rightY = .675;
 
     bool hitPaddle(double paddleX, double paddleY) {
       final left = paddleX - paddleHalfWidth;
@@ -851,10 +789,7 @@ class _GameScreenState extends State<GameScreen>
       const halfW = .056;
       const halfH = .019;
 
-      final closestX = ball.x.clamp(
-        brick.x + _brickMoveOffset - halfW,
-        brick.x + _brickMoveOffset + halfW,
-      );
+      final closestX = ball.x.clamp(brick.x - halfW, brick.x + halfW);
 
       final closestY = ball.y.clamp(brick.y - halfH, brick.y + halfH);
 
@@ -974,7 +909,8 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _explodeBrick(Brick center) {
-    // Explosive brick mechanic: damage nearby bricks without visual effects.
+    _addSparks(center.x, center.y, 35);
+
     for (final brick in _bricks) {
       if (!brick.alive || identical(brick, center)) {
         continue;
@@ -982,9 +918,8 @@ class _GameScreenState extends State<GameScreen>
 
       final dx = brick.x - center.x;
       final dy = brick.y - center.y;
-      final distance = sqrt(dx * dx + dy * dy);
 
-      if (distance < .18) {
+      if (sqrt(dx * dx + dy * dy) < .18) {
         brick.hp--;
 
         if (brick.hp <= 0) {
@@ -1003,7 +938,7 @@ class _GameScreenState extends State<GameScreen>
     for (final power in List<FallingPower>.from(_powers)) {
       power.y += dt * .23;
 
-      const paddleY = .905;
+      const paddleY = .785;
       const paddleHalfHeight = .018;
       const powerRadius = .026;
 
@@ -1398,6 +1333,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _addSparks(double x, double y, int amount) {
+    amount = (amount * 0.35).round().clamp(1, 12);
     for (int i = 0; i < amount; i++) {
       final angle = _random.nextDouble() * pi * 2;
       final speed = .15 + _random.nextDouble() * .55;
@@ -1414,7 +1350,6 @@ class _GameScreenState extends State<GameScreen>
       );
     }
 
-    // Prevent an excessive number of particles from hurting FPS.
     if (_sparks.length > 350) {
       _sparks.removeRange(0, _sparks.length - 350);
     }
@@ -2142,7 +2077,6 @@ class _GameScreenState extends State<GameScreen>
                 CustomPaint(
                   painter: _NeonGamePainter(
                     level: widget.level,
-                    stageElapsed: _stageElapsed,
                     stageName: _stageName,
                     stageChallenge: _stageChallenge,
                     score: _score,
@@ -2169,7 +2103,6 @@ class _GameScreenState extends State<GameScreen>
                     shield: _shield,
                     laser: _laser,
                     doublePaddle: _doublePaddle,
-                    brickMoveOffset: _brickMoveOffset,
                     leftPaddleX: _leftPaddleX,
                     rightPaddleX: _rightPaddleX,
                   ),
@@ -2219,7 +2152,6 @@ class _GameScreenState extends State<GameScreen>
 class _NeonGamePainter extends CustomPainter {
   _NeonGamePainter({
     required this.level,
-    required this.stageElapsed,
     required this.stageName,
     required this.stageChallenge,
     required this.score,
@@ -2246,13 +2178,11 @@ class _NeonGamePainter extends CustomPainter {
     required this.shield,
     required this.laser,
     required this.doublePaddle,
-    required this.brickMoveOffset,
     required this.leftPaddleX,
     required this.rightPaddleX,
   });
 
   final int level;
-  final double stageElapsed;
   final String stageName;
   final String stageChallenge;
   final int score;
@@ -2284,7 +2214,6 @@ class _NeonGamePainter extends CustomPainter {
   final bool shield;
   final bool laser;
   final bool doublePaddle;
-  final double brickMoveOffset;
   final double leftPaddleX;
   final double rightPaddleX;
 
@@ -2301,8 +2230,6 @@ class _NeonGamePainter extends CustomPainter {
     if (paused) {
       _drawCenterNeonPause(canvas, size);
     }
-
-    canvas.restore();
   }
 
   void _background(Canvas canvas, Size size) {
@@ -2485,9 +2412,7 @@ class _NeonGamePainter extends CustomPainter {
     canvas.drawCircle(
       center,
       radius + 12,
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .10)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      Paint()..color = NeonColors.cyan.withValues(alpha: .10),
     );
 
     // Main neon glow ring.
@@ -2497,8 +2422,7 @@ class _NeonGamePainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4
-        ..color = NeonColors.cyan.withValues(alpha: .35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = NeonColors.cyan.withValues(alpha: .35),
     );
 
     // Dark glass center.
@@ -2523,9 +2447,7 @@ class _NeonGamePainter extends CustomPainter {
 
     canvas.drawPath(
       path,
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .28)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+      Paint()..color = NeonColors.cyan.withValues(alpha: .28),
     );
 
     canvas.drawPath(path, Paint()..color = NeonColors.cyan);
@@ -2615,7 +2537,7 @@ class _NeonGamePainter extends CustomPainter {
       const gameplayTopOffset = .055;
 
       final center = Offset(
-        (brick.x + brickMoveOffset) * size.width,
+        brick.x * size.width,
         (brick.y + gameplayTopOffset) * size.height,
       );
 
@@ -2634,30 +2556,10 @@ class _NeonGamePainter extends CustomPainter {
 
       // ----------------------------------------------------------
       // SOFT NEON AURA
-      // Explosive bricks pulse harder when hit.
       // ----------------------------------------------------------
-      final explosivePulse =
-          brick.type == BrickType.explosive && brick.flashing;
-
       final aura = Paint()
-        ..color = color.withValues(
-          alpha: explosivePulse ? .95 : (brick.flashing ? .70 : .30),
-        )
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          explosivePulse ? 20 : 14,
-        );
-
-      if (explosivePulse) {
-        canvas.drawRRect(
-          rrect,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3.5
-            ..color = Colors.white.withValues(alpha: .75)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-        );
-      }
+        ..color = color.withValues(alpha: brick.flashing ? .70 : .30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
 
       canvas.drawRRect(rrect, aura);
 
@@ -2725,11 +2627,9 @@ class _NeonGamePainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = brick.flashing ? 2.8 : 1.8
-          ..color = brick.flashing ? Colors.white : color.withValues(alpha: .95)
-          ..maskFilter = MaskFilter.blur(
-            BlurStyle.normal,
-            brick.flashing ? 5 : 2.5,
-          ),
+          ..color = brick.flashing
+              ? Colors.white
+              : color.withValues(alpha: .95),
       );
 
       // ----------------------------------------------------------
@@ -2741,9 +2641,7 @@ class _NeonGamePainter extends CustomPainter {
           canvas.drawCircle(
             center,
             min(width, height) * .13,
-            Paint()
-              ..color = color.withValues(alpha: .18)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+            Paint()..color = color.withValues(alpha: .18),
           );
 
           canvas.drawCircle(
@@ -2755,25 +2653,6 @@ class _NeonGamePainter extends CustomPainter {
 
         case BrickType.explosive:
           _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
-
-          // Animated charging ring around explosive bricks.
-          final pulse = (sin(stageElapsed * 8.0) + 1.0) * .5;
-
-          final chargeAlpha = brick.flashing ? .95 : (.34 + pulse * .30);
-
-          final chargeRadius = min(width, height) * (.32 + pulse * .05);
-
-          final chargePaint = Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = brick.flashing ? 2.6 : 1.2 + pulse * .8
-            ..color = color.withValues(alpha: chargeAlpha)
-            ..maskFilter = MaskFilter.blur(
-              BlurStyle.normal,
-              brick.flashing ? 6 : 3 + pulse * 2,
-            );
-
-          canvas.drawCircle(center, chargeRadius, chargePaint);
-
           break;
 
         case BrickType.steel:
@@ -2805,24 +2684,18 @@ class _NeonGamePainter extends CustomPainter {
     double size,
     Color color,
   ) {
-    // ----------------------------------------------------------
-    // OUTER WARNING GLOW
-    // ----------------------------------------------------------
-    final outerGlow = Paint()
-      ..color = color.withValues(alpha: .30)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+    final glow = Paint()
+      ..color = color.withValues(alpha: .65)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
-    canvas.drawCircle(center, size * .43, outerGlow);
+    canvas.drawCircle(center, size * .25, glow);
 
-    // ----------------------------------------------------------
-    // ROTATED EXPLOSION CORE
-    // ----------------------------------------------------------
     final path = Path();
     const points = 8;
 
     for (int i = 0; i < points; i++) {
       final angle = -pi / 2 + i * pi / 4;
-      final radius = i.isEven ? size * .30 : size * .17;
+      final radius = i.isEven ? size * .25 : size * .11;
 
       final point = Offset(
         center.dx + cos(angle) * radius,
@@ -2838,7 +2711,6 @@ class _NeonGamePainter extends CustomPainter {
 
     path.close();
 
-    // Main explosive body.
     canvas.drawPath(
       path,
       Paint()
@@ -2846,66 +2718,32 @@ class _NeonGamePainter extends CustomPainter {
         ..color = color,
     );
 
-    // Bright neon outline.
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = Colors.white.withValues(alpha: .95)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
     );
 
-    // ----------------------------------------------------------
-    // HOT CENTER
-    // ----------------------------------------------------------
-    canvas.drawCircle(
-      center,
-      size * .115,
-      Paint()
-        ..color = Colors.white
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
+    // Explosion core.
+    canvas.drawCircle(center, size * .075, Paint()..color = Colors.white);
 
-    canvas.drawCircle(center, size * .065, Paint()..color = Colors.white);
+    // Small sparks.
+    final sparkPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .85)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
 
-    // ----------------------------------------------------------
-    // WARNING RAYS
-    // ----------------------------------------------------------
-    final rayPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: .85);
-
-    for (int i = 0; i < 8; i++) {
-      final angle = i * pi / 4 + pi / 8;
-
-      final inner = size * .34;
-      final outer = size * .44;
+    for (int i = 0; i < 4; i++) {
+      final angle = i * pi / 2 + pi / 4;
+      final inner = size * .27;
+      final outer = size * .36;
 
       canvas.drawLine(
         Offset(center.dx + cos(angle) * inner, center.dy + sin(angle) * inner),
         Offset(center.dx + cos(angle) * outer, center.dy + sin(angle) * outer),
-        rayPaint,
-      );
-    }
-
-    // ----------------------------------------------------------
-    // FOUR SMALL SPARK POINTS
-    // ----------------------------------------------------------
-    for (int i = 0; i < 4; i++) {
-      final angle = i * pi / 2 + pi / 4;
-
-      final point = Offset(
-        center.dx + cos(angle) * size * .39,
-        center.dy + sin(angle) * size * .39,
-      );
-
-      canvas.drawCircle(
-        point,
-        size * .035,
-        Paint()..color = Colors.white.withValues(alpha: .9),
+        sparkPaint,
       );
     }
   }
@@ -3036,7 +2874,7 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final center = Offset(paddle * size.width, size.height * .890);
+    final center = Offset(paddle * size.width, size.height * .785);
 
     final width = powerStageActive
         ? size.width * .70
@@ -3055,17 +2893,13 @@ class _NeonGamePainter extends CustomPainter {
     // Large outer neon glow.
     canvas.drawRRect(
       paddleRRect.inflate(7),
-      Paint()
-        ..color = NeonColors.purple.withValues(alpha: .18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      Paint()..color = NeonColors.purple.withValues(alpha: .18),
     );
 
     // Cyan/pink secondary glow.
     canvas.drawRRect(
       paddleRRect.inflate(3),
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .32)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+      Paint()..color = NeonColors.cyan.withValues(alpha: .32),
     );
 
     // Rainbow neon body.
@@ -3146,8 +2980,8 @@ class _NeonGamePainter extends CustomPainter {
       final sideHeight = size.height * .030;
 
       // Bonus paddles remain below the brick field at different heights.
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .780);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .780);
+      final leftCenter = Offset(leftPaddleX * size.width, size.height * .565);
+      final rightCenter = Offset(rightPaddleX * size.width, size.height * .675);
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
@@ -3157,17 +2991,13 @@ class _NeonGamePainter extends CustomPainter {
         // Outer neon glow
         canvas.drawRRect(
           RRect.fromRectAndRadius(rect.inflate(5), const Radius.circular(14)),
-          Paint()
-            ..color = color.withValues(alpha: .12)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+          Paint()..color = color.withValues(alpha: .12),
         );
 
         // Strong neon glow
         canvas.drawRRect(
           RRect.fromRectAndRadius(rect.inflate(2), const Radius.circular(12)),
-          Paint()
-            ..color = color.withValues(alpha: .35)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+          Paint()..color = color.withValues(alpha: .35),
         );
 
         // Main body
@@ -3247,9 +3077,7 @@ class _NeonGamePainter extends CustomPainter {
         canvas.drawCircle(
           Offset(p.dx * size.width, p.dy * size.height),
           trailRadius + 5,
-          Paint()
-            ..color = color.withValues(alpha: alpha * .45)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+          Paint()..color = color.withValues(alpha: alpha * .45),
         );
 
         // Bright inner trail.
@@ -3268,17 +3096,13 @@ class _NeonGamePainter extends CustomPainter {
       canvas.drawCircle(
         center,
         25,
-        Paint()
-          ..color = color.withValues(alpha: .10)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+        Paint()..color = color.withValues(alpha: .10),
       );
 
       canvas.drawCircle(
         center,
         20,
-        Paint()
-          ..color = color.withValues(alpha: .20)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+        Paint()..color = color.withValues(alpha: .20),
       );
 
       // ─────────────────────────────────────────────
@@ -3290,8 +3114,7 @@ class _NeonGamePainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.2
-          ..color = color.withValues(alpha: .95)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+          ..color = color.withValues(alpha: .95),
       );
 
       // ─────────────────────────────────────────────
@@ -3322,9 +3145,7 @@ class _NeonGamePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(center.dx + 1, center.dy + 1),
         5.2,
-        Paint()
-          ..color = Colors.white.withValues(alpha: .18)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        Paint()..color = Colors.white.withValues(alpha: .18),
       );
 
       // ─────────────────────────────────────────────
@@ -3349,9 +3170,7 @@ class _NeonGamePainter extends CustomPainter {
         canvas.drawCircle(
           center,
           7,
-          Paint()
-            ..color = Colors.yellow.withValues(alpha: .28)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+          Paint()..color = Colors.yellow.withValues(alpha: .28),
         );
 
         canvas.drawCircle(center, 3.5, Paint()..color = Colors.yellow);
@@ -3369,18 +3188,14 @@ class _NeonGamePainter extends CustomPainter {
       canvas.drawCircle(
         center,
         23,
-        Paint()
-          ..color = color.withValues(alpha: .16)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+        Paint()..color = color.withValues(alpha: .16),
       );
 
       // Bright secondary glow.
       canvas.drawCircle(
         center,
         18,
-        Paint()
-          ..color = color.withValues(alpha: .30)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+        Paint()..color = color.withValues(alpha: .30),
       );
 
       // Solid neon power-up body.
@@ -3448,43 +3263,9 @@ class _NeonGamePainter extends CustomPainter {
     for (final spark in sparks) {
       final alpha = (spark.life / spark.maxLife).clamp(0.0, 1.0);
 
-      final x = spark.x * size.width;
-      final y = spark.y * size.height;
-
-      // Particle trail direction.
-      final trailLength = 7.0 * alpha;
-      final dx = spark.vx * trailLength;
-      final dy = spark.vy * trailLength;
-
-      // Soft neon glow.
-      final glowPaint = Paint()
-        ..color = Colors.white.withValues(alpha: alpha * .30)
-        ..strokeWidth = 4.5
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-
-      canvas.drawLine(
-        Offset(x - dx, y - dy),
-        Offset(x + dx, y + dy),
-        glowPaint,
-      );
-
-      // Sharp bright spark core.
-      final corePaint = Paint()
-        ..color = Colors.white.withValues(alpha: alpha * .95)
-        ..strokeWidth = 1.7
-        ..strokeCap = StrokeCap.round;
-
-      canvas.drawLine(
-        Offset(x - dx, y - dy),
-        Offset(x + dx, y + dy),
-        corePaint,
-      );
-
-      // Tiny hot center.
       canvas.drawCircle(
-        Offset(x, y),
-        1.5,
+        Offset(spark.x * size.width, spark.y * size.height),
+        2.2,
         Paint()..color = Colors.white.withValues(alpha: alpha),
       );
     }
@@ -3502,17 +3283,13 @@ class _NeonGamePainter extends CustomPainter {
     canvas.drawCircle(
       center,
       radius + (large ? 14 : 5),
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: large ? .12 : .10)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, large ? 22 : 8),
+      Paint()..color = NeonColors.cyan.withValues(alpha: large ? .12 : .10),
     );
 
     canvas.drawCircle(
       center,
       radius,
-      Paint()
-        ..color = NeonColors.purple.withValues(alpha: large ? .38 : .30)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, large ? 16 : 7),
+      Paint()..color = NeonColors.purple.withValues(alpha: large ? .38 : .30),
     );
 
     canvas.drawCircle(

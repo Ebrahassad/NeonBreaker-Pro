@@ -6,6 +6,7 @@ class SoundService {
   static final SoundService instance = SoundService._();
 
   final AudioPlayer _paddlePlayer = AudioPlayer();
+  final AudioPlayer _brickPlayer = AudioPlayer();
 
   bool soundEnabled = true;
 
@@ -14,6 +15,7 @@ class SoundService {
 
     if (!enabled) {
       _paddlePlayer.stop();
+      _brickPlayer.stop();
     }
   }
 
@@ -21,14 +23,8 @@ class SoundService {
     if (!soundEnabled) return;
 
     try {
-      // Use a fresh player so rapid brick hits do not cut each other off.
-      final player = AudioPlayer();
-
-      await player.play(AssetSource('audio/brik.mp3'));
-
-      player.onPlayerComplete.listen((_) async {
-        await player.dispose();
-      });
+      await _brickPlayer.stop();
+      await _brickPlayer.play(AssetSource('audio/brik.mp3'));
     } catch (_) {}
   }
 
@@ -37,12 +33,12 @@ class SoundService {
 
     try {
       await _paddlePlayer.stop();
-
       await _paddlePlayer.play(AssetSource('audio/ping.wav'));
     } catch (_) {}
   }
 
   Future<void> dispose() async {
     await _paddlePlayer.dispose();
+    await _brickPlayer.dispose();
   }
 }
