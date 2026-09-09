@@ -5,6 +5,9 @@ import '../services/save_service.dart';
 import '../widgets/ad_banner.dart';
 import 'game_screen.dart';
 
+// Developer-only test mode. Set to false before release.
+const bool kDevTestMode = true;
+
 class LevelsScreen extends StatefulWidget {
   const LevelsScreen({super.key, required this.save});
 
@@ -51,6 +54,68 @@ class _LevelsScreenState extends State<LevelsScreen> {
           color: index < stars ? NeonColors.yellow : Colors.white24,
         ),
       ),
+    );
+  }
+
+  void _showDevLevelPicker() {
+    if (!kDevTestMode) return;
+
+    int selectedLevel = 1;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: NeonColors.surface,
+              title: const Text(
+                'DEV TEST — SELECT LEVEL',
+                style: TextStyle(
+                  color: NeonColors.cyan,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              content: DropdownButtonFormField<int>(
+                initialValue: selectedLevel,
+                dropdownColor: NeonColors.surface,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Level',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+                items: List.generate(
+                  100,
+                  (index) => DropdownMenuItem<int>(
+                    value: index + 1,
+                    child: Text('LEVEL ${index + 1}'),
+                  ),
+                ),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() {
+                      selectedLevel = value;
+                    });
+                  }
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _openLevel(selectedLevel);
+                  },
+                  child: const Text('PLAY'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -141,6 +206,19 @@ class _LevelsScreenState extends State<LevelsScreen> {
               ],
             ),
           ),
+
+            if (kDevTestMode)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _showDevLevelPicker,
+                    icon: const Icon(Icons.developer_mode_rounded),
+                    label: const Text('DEV TEST — SELECT LEVEL'),
+                  ),
+                ),
+              ),
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(18),
