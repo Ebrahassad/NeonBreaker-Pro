@@ -21,7 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     sound = widget.save.soundEnabled;
     vibration = widget.save.vibrationEnabled;
-    backgroundTheme = widget.save.backgroundTheme;
+    backgroundTheme = widget.save.backgroundTheme.clamp(0, 1);
   }
 
   @override

@@ -19,40 +19,30 @@ class NeonColors {
 /// in-game background.
 class BackgroundThemes {
   static const List<String> names = [
-    'Nebula Purple',
-    'Cyan Ocean',
-    'Emerald',
-    'Crimson',
-    'Void Black',
+    'White',
+    'Dark Gray',
   ];
 
   static const List<List<Color>> gradients = [
-    // Nebula Purple (default)
-    [Color(0xFF1B0A35), Color(0xFF090417), Color(0xFF020208)],
-    // Cyan Ocean
-    [Color(0xFF07253A), Color(0xFF03121F), Color(0xFF010508)],
-    // Emerald
-    [Color(0xFF0A2E1F), Color(0xFF06170F), Color(0xFF010805)],
-    // Crimson
-    [Color(0xFF3A0A1E), Color(0xFF1A0410), Color(0xFF080106)],
-    // Void Black
-    [Color(0xFF16161C), Color(0xFF0A0A0E), Color(0xFF030304)],
+    [
+      Color(0xFFFFFFFF),
+      Color(0xFFF1F1F1),
+      Color(0xFFDCDCDC),
+    ],
+    [
+      Color(0xFF303030),
+      Color(0xFF181818),
+      Color(0xFF080808),
+    ],
   ];
 
-  /// Accent swatch shown for each theme's picker button.
   static const List<Color> swatch = [
-    NeonColors.purple,
-    NeonColors.cyan,
-    NeonColors.green,
-    NeonColors.pink,
-    Color(0xFF9AA0AE),
+    Color(0xFFFFFFFF),
+    Color(0xFF606060),
   ];
 
   static List<Color> colorsFor(int index) {
-    if (index < 0 || index >= gradients.length) {
-      return gradients[0];
-    }
-    return gradients[index];
+    return gradients[index.clamp(0, gradients.length - 1)];
   }
 }
 

@@ -5,7 +5,6 @@ import 'core/theme.dart';
 import 'screens/home_screen.dart';
 import 'services/ad_service.dart';
 import 'services/save_service.dart';
-import 'services/sound_service.dart';
 
 Future<void> main() async {
   runZonedGuarded(
@@ -16,7 +15,6 @@ Future<void> main() async {
       await save.init();
 
       // Sound effects are optional too — never allowed to block startup.
-      unawaited(SoundService.instance.init(save));
 
       runApp(NeonBreakerApp(save: save));
 

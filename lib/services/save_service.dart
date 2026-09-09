@@ -28,6 +28,21 @@ class SaveService {
     await _prefs.setInt('extra_lives', value < 0 ? 0 : value);
   }
 
+  // ----------------------------------------------------------
+  // YELLOW LIVES — GLOBAL REWARD BALANCE
+  // ----------------------------------------------------------
+
+  int get yellowLives => _prefs.getInt('yellow_lives') ?? 0;
+
+  Future<void> addYellowLives(int amount) async {
+    if (amount <= 0) return;
+    await _prefs.setInt('yellow_lives', yellowLives + amount);
+  }
+
+  Future<void> consumeYellowLives() async {
+    await _prefs.setInt('yellow_lives', 0);
+  }
+
   bool get soundEnabled => _prefs.getBool('sound') ?? true;
 
   bool get vibrationEnabled => _prefs.getBool('vibration') ?? true;
@@ -36,10 +51,10 @@ class SaveService {
   // BACKGROUND THEME
   // ----------------------------------------------------------
 
-  int get backgroundTheme => _prefs.getInt('background_theme') ?? 0;
+  int get backgroundTheme => (_prefs.getInt('background_theme') ?? 0).clamp(0, 1);
 
   Future<void> setBackgroundTheme(int value) async {
-    await _prefs.setInt('background_theme', value);
+    await _prefs.setInt('background_theme', value.clamp(0, 1));
   }
 
   int bestScoreForLevel(int level) {

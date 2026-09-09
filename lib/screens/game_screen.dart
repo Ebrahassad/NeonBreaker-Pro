@@ -8,7 +8,6 @@ import '../core/stages/stage_pattern.dart';
 import '../core/stages/stage_reward.dart';
 import '../services/ad_service.dart';
 import '../services/save_service.dart';
-import '../services/sound_service.dart';
 import 'home_screen.dart';
 
 enum BrickType { normal, explosive, steel, bonus }
@@ -37,12 +36,19 @@ class Ball {
 class Brick {
   Brick({required this.x, required this.y, required this.type, this.hp = 1});
 
-  final double x;
-  final double y;
+  double x;
+  double y;
   final BrickType type;
   int hp;
   bool alive = true;
   bool flashing = false;
+
+  // Moving-brick properties.
+  bool moving = false;
+  double moveDirection = 1.0;
+  double moveSpeed = 0.0;
+  double moveMinX = 0.0;
+  double moveMaxX = 1.0;
 }
 
 class FallingPower {
@@ -136,6 +142,18 @@ class _GameScreenState extends State<GameScreen>
   double _shieldTimer = 0;
   double _laserTimer = 0;
   double _doublePaddleTimer = 0;
+
+  Future<void> _vibrate({bool strong = false}) async {
+    if (!widget.save.vibrationEnabled) {
+      return;
+    }
+
+    if (strong) {
+      await HapticFeedback.heavyImpact();
+    } else {
+      await HapticFeedback.lightImpact();
+    }
+  }
 
   double _leftPaddleX = .18;
   double _rightPaddleX = .82;
@@ -403,31 +421,72 @@ class _GameScreenState extends State<GameScreen>
           type = BrickType.steel;
         }
 
-        final hp = type == BrickType.steel ? 2 + widget.level ~/ 5 : 1;
+          final hp = type == BrickType.steel ? 2 + widget.level ~/ 5 : 1;
 
-        _bricks.add(
-          Brick(x: .065 + col * .125, y: .105 + row * .055, type: type, hp: hp),
-        );
+          final brick = Brick(
+            x: .065 + col * .125,
+            y: .105 + row * .055,
+            type: type,
+            hp: hp,
+          );
+
+          // Moving bricks gradually increase the challenge across 100 levels.
+          final movingCount = widget.level < 11
+              ? 0
+              : widget.level < 21
+                  ? 1
+                  : widget.level < 41
+                      ? 2
+                      : widget.level < 61
+                          ? 3
+                          : widget.level < 81
+                              ? 4
+                              : 5;
+
+          // Explosive and steel bricks remain stationary for fair gameplay.
+          if (movingCount > 0 &&
+              (type == BrickType.normal || type == BrickType.bonus)) {
+            final movementSeed =
+                (row * columns + col + widget.level) % 11;
+
+            if (movementSeed < movingCount) {
+              brick.moving = true;
+              brick.moveDirection =
+                  ((row + col + widget.level) % 2 == 0) ? 1.0 : -1.0;
+              brick.moveSpeed =
+                  min(.068, .018 + widget.level * .00050);
+              brick.moveMinX = .065;
+              brick.moveMaxX = .935;
+            }
+          }
+
+          _bricks.add(brick);
       }
     }
   }
 
   double _explosiveChance() {
-    return min(.18, .07 + widget.level * .006);
+    // Explosive bricks increase gradually across the 100 levels.
+    // Keep a reasonable cap so late levels remain playable.
+    final level = min(widget.level, 100);
+    return (.05 + level * .0018).clamp(.05, .23);
   }
 
   // Balanced arcade speed:
   // a little snappier than before, with a gentle per-level ramp-up.
   double _initialHorizontalSpeed() {
-    return .58;
+    return .64;
   }
 
   double _initialVerticalSpeed() {
-    return .90;
+    return .98;
   }
 
   double _speedMultiplier() {
-    final levelSpeed = (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
+    // Gradual speed progression across all 100 levels.
+    // Level 1 = 1.00x, Level 100 = about 1.35x.
+    final levelSpeed =
+        (1.0 + (min(widget.level, 100) - 1) * 0.0035).clamp(1.0, 1.35);
 
     if (_powerStageActive) {
       return levelSpeed * 1.18;
@@ -561,7 +620,26 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
+  void _updateMovingBricks(double dt) {
+    for (final brick in _bricks) {
+      if (!brick.alive || !brick.moving) {
+        continue;
+      }
+
+      brick.x += brick.moveDirection * brick.moveSpeed * dt;
+
+      if (brick.x <= brick.moveMinX) {
+        brick.x = brick.moveMinX;
+        brick.moveDirection = 1.0;
+      } else if (brick.x >= brick.moveMaxX) {
+        brick.x = brick.moveMaxX;
+        brick.moveDirection = -1.0;
+      }
+    }
+  }
+
   void _updateBalls(double dt) {
+    _updateMovingBricks(dt);
     _updateDoublePaddles(dt);
 
     final speed = _speedMultiplier();
@@ -573,7 +651,7 @@ class _GameScreenState extends State<GameScreen>
 
       ball.trail.insert(0, Offset(ball.x, ball.y));
 
-      if (ball.trail.length > 10) {
+      if (ball.trail.length > 5) {
         ball.trail.removeLast();
       }
 
@@ -586,12 +664,14 @@ class _GameScreenState extends State<GameScreen>
         ball.x = radius;
         ball.vx = ball.vx.abs();
         _impact(ball.x, ball.y);
+        _vibrate();
       }
 
       if (ball.x >= 1 - radius) {
         ball.x = 1 - radius;
         ball.vx = -ball.vx.abs();
         _impact(ball.x, ball.y);
+        _vibrate();
       }
 
       if (ball.y <= .055 + radius) {
@@ -676,6 +756,7 @@ class _GameScreenState extends State<GameScreen>
 
       _impact(ball.x, paddleY);
       _addSparks(ball.x, paddleY, 8);
+      _vibrate();
     }
   }
 
@@ -762,7 +843,7 @@ class _GameScreenState extends State<GameScreen>
 
     brick.flashing = true;
 
-    SoundService.instance.playHit();
+    _vibrate();
 
     _combo++;
     if (_combo > _bestCombo) {
@@ -780,7 +861,6 @@ class _GameScreenState extends State<GameScreen>
     if (brick.hp <= 0) {
       brick.alive = false;
 
-      SoundService.instance.playBreak();
 
       if (brick.type == BrickType.explosive) {
         _explodeBrick(brick);
@@ -798,11 +878,7 @@ class _GameScreenState extends State<GameScreen>
       ball.vy = -ball.vy;
     }
 
-    Future<void>.delayed(const Duration(milliseconds: 70), () {
-      if (mounted) {
-        brick.flashing = false;
-      }
-    });
+    brick.flashing = false;
   }
 
   void _checkStageEvent() {
@@ -823,7 +899,7 @@ class _GameScreenState extends State<GameScreen>
 
       _score += 75;
 
-      _addSparks(_paddle, .88, 28);
+      _addSparks(_paddle, .88, 12);
     }
   }
 
@@ -838,8 +914,8 @@ class _GameScreenState extends State<GameScreen>
     // This prevents Power Stage from immediately reactivating after
     // its timer expires while the combo is still above 12.
 
-    const comboStep = 12;
-    final nextPowerStageCombo = _lastPowerStageCombo + comboStep;
+    const comboStep = 18;
+    final nextPowerStageCombo = _lastPowerStageCombo == 0 ? 12 : _lastPowerStageCombo + comboStep;
 
     _powerStage = ((_combo % comboStep) / comboStep * 100.0).clamp(0.0, 100.0);
 
@@ -860,17 +936,13 @@ class _GameScreenState extends State<GameScreen>
     _widePaddle = true;
     _wideTimer = 8.0;
 
-    // Give every active ball the power-stage fire effect.
-    for (final ball in _balls) {
-      ball.fire = true;
-    }
 
     _score += 250;
-    _addSparks(_paddle, .88, 60);
+    _addSparks(_paddle, .88, 20);
   }
 
   void _explodeBrick(Brick center) {
-    _addSparks(center.x, center.y, 35);
+    _addSparks(center.x, center.y, 16);
 
     for (final brick in _bricks) {
       if (!brick.alive || identical(brick, center)) {
@@ -1010,6 +1082,7 @@ class _GameScreenState extends State<GameScreen>
     }
 
     _lives--;
+    _vibrate(strong: true);
 
     // Losing a life breaks the combo and heavily drains Power Stage.
     _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
@@ -1027,9 +1100,12 @@ class _GameScreenState extends State<GameScreen>
     if (_lives <= 0) {
       _saveBrickState();
       // Use a saved extra life before declaring game over.
-      if (widget.save.extraLives > 0) {
-        widget.save.setExtraLives(widget.save.extraLives - 1);
-        _lives = 1;
+      if (widget.save.yellowLives > 0) {
+        // Yellow lives are a global reserve shared by all levels.
+        // When the player loses all 3 normal lives, consume the
+        // entire yellow reserve and restore a fresh set of 3 lives.
+        widget.save.consumeYellowLives();
+        _lives = 3;
         _resetBalls();
         return;
       }
@@ -1281,7 +1357,6 @@ class _GameScreenState extends State<GameScreen>
 
   void _impact(double x, double y) {
     _addSparks(x, y, 3);
-    SoundService.instance.playHit();
   }
 
   void _addSparks(double x, double y, int amount) {
@@ -1301,7 +1376,7 @@ class _GameScreenState extends State<GameScreen>
       );
     }
 
-    if (_sparks.length > 350) {
+    if (_sparks.length > 120) {
       _sparks.removeRange(0, _sparks.length - 350);
     }
   }
@@ -1379,7 +1454,7 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  void _watchAdForDoubleBonus() {
+  Future<void> _watchAdForDoubleBonus() async {
     if (_doubleBonusUsed) return;
 
     if (!AdService.instance.isRewardedReady) {
@@ -1397,7 +1472,7 @@ class _GameScreenState extends State<GameScreen>
     }
 
     AdService.instance.showRewarded(
-      onReward: () {
+      onReward: () async {
         if (!mounted || !_levelClear) return;
 
         setState(() {
@@ -1405,15 +1480,15 @@ class _GameScreenState extends State<GameScreen>
           _score += _bonusScore;
         });
 
-        widget.save.addExtraLives(1);
-        widget.save.saveLevelScore(widget.level, _score);
+        await widget.save.addYellowLives(1);
+        await widget.save.saveLevelScore(widget.level, _score);
 
         if (mounted) {
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('Bonus reward! +1 ❤️'),
+                content: Text('Bonus reward! +1 💛'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1923,7 +1998,6 @@ class _GameScreenState extends State<GameScreen>
       ),
     );
   }
-
   String get _stageName {
     switch (_stageConfig.theme) {
       case StageTheme.classic:
@@ -1935,7 +2009,7 @@ class _GameScreenState extends State<GameScreen>
       case StageTheme.reactor:
         return 'REACTOR';
       case StageTheme.voidZone:
-        return 'VOID';
+        return 'VOID ZONE';
       case StageTheme.galaxy:
         return 'GALAXY';
     }
@@ -2029,7 +2103,7 @@ class _GameScreenState extends State<GameScreen>
                     stageChallenge: _stageChallenge,
                     score: _score,
                     lives: _lives,
-                    extraLives: widget.save.extraLives,
+                    extraLives: widget.save.yellowLives,
                     combo: _combo,
                     powerStage: _powerStage,
                     powerStageActive: _powerStageActive,
@@ -2059,10 +2133,183 @@ class _GameScreenState extends State<GameScreen>
                 ),
 
                 if (_gameOver || _levelClear) _resultNavigation(),
+
+                // PREMIUM PAUSE BUTTON — always above the game canvas.
+                if (!_gameOver && !_levelClear)
+                  Positioned(
+                    top: 18,
+                    right: 18,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        if (_paused) {
+                          setState(() {
+                            _paused = false;
+                          });
+                          _controller.repeat();
+                        } else {
+                          setState(() {
+                            _paused = true;
+                          });
+                          _controller.stop();
+                        }
+                      },
+                      child: _pauseButton(),
+                    ),
+                  ),
+
+                if (_paused && !_gameOver && !_levelClear)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: .28),
+                      ),
+                    ),
+                  ),
+
+                if (_paused && !_gameOver && !_levelClear)
+                  Positioned.fill(
+                    child: Center(
+                      child: IgnorePointer(
+                        child: _pauseOverlay(),
+                      ),
+                    ),
+                  ),
+
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+
+  Widget _pauseButton() {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFF09051A).withValues(alpha: .92),
+        border: Border.all(
+          color: NeonColors.cyan.withValues(alpha: .90),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: NeonColors.cyan.withValues(alpha: .55),
+            blurRadius: 16,
+            spreadRadius: 1,
+          ),
+          BoxShadow(
+            color: NeonColors.purple.withValues(alpha: .35),
+            blurRadius: 28,
+          ),
+        ],
+      ),
+      child: Center(
+        child: Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: NeonColors.cyan.withValues(alpha: .10),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: .18),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 4,
+                height: 14,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.cyan,
+                      blurRadius: 7,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                width: 4,
+                height: 14,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.cyan,
+                      blurRadius: 7,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pauseOverlay() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xFF09051A).withValues(alpha: .94),
+        border: Border.all(
+          color: NeonColors.cyan.withValues(alpha: .75),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: NeonColors.cyan.withValues(alpha: .30),
+            blurRadius: 30,
+            spreadRadius: 2,
+          ),
+          BoxShadow(
+            color: NeonColors.purple.withValues(alpha: .22),
+            blurRadius: 50,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'PAUSED',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 4,
+              shadows: [
+                Shadow(
+                  color: NeonColors.cyan,
+                  blurRadius: 12,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'TAP PAUSE TO RESUME',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .65),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2192,18 +2439,6 @@ class _NeonGamePainter extends CustomPainter {
           colors: colors,
         ).createShader(rect),
     );
-
-    final grid = Paint()
-      ..color = NeonColors.purple.withValues(alpha: .08)
-      ..strokeWidth = 1;
-
-    for (double y = 70; y < size.height; y += 38) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-
-    for (double x = 0; x < size.width; x += 38) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
   }
 
   void _drawStageEvent(Canvas canvas, Size size) {
@@ -2293,7 +2528,7 @@ class _NeonGamePainter extends CustomPainter {
         Paint()
           ..color = accent.withValues(alpha: .85)
           ..maskFilter = progress >= .70
-              ? const MaskFilter.blur(BlurStyle.normal, 5)
+              ? const MaskFilter.blur(BlurStyle.normal, 3)
               : null,
       );
     }
@@ -2326,7 +2561,7 @@ class _NeonGamePainter extends CustomPainter {
 
       final glow = Paint()
         ..color = NeonColors.cyan.withValues(alpha: .12 + pulse * .18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
       canvas.drawCircle(
         Offset(size.width / 2, size.height * .50),
@@ -2402,8 +2637,8 @@ class _NeonGamePainter extends CustomPainter {
     if (extraLives > 0) {
       _text(
         canvas,
-        '+$extraLives',
-        Offset(size.width - 46, top),
+        '♥ $extraLives',
+        Offset(size.width - 54, top),
         13,
         NeonColors.yellow,
       );
@@ -2456,7 +2691,7 @@ class _NeonGamePainter extends CustomPainter {
       // ----------------------------------------------------------
       final aura = Paint()
         ..color = color.withValues(alpha: brick.flashing ? .70 : .30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
       canvas.drawRRect(rrect, aura);
 
@@ -2542,7 +2777,7 @@ class _NeonGamePainter extends CustomPainter {
             min(width, height) * .13,
             Paint()
               ..color = color.withValues(alpha: .18)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
           );
 
           canvas.drawCircle(
@@ -2587,7 +2822,7 @@ class _NeonGamePainter extends CustomPainter {
   ) {
     final glow = Paint()
       ..color = color.withValues(alpha: .65)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
     canvas.drawCircle(center, size * .25, glow);
 
@@ -2727,7 +2962,7 @@ class _NeonGamePainter extends CustomPainter {
 
     final glow = Paint()
       ..color = NeonColors.yellow.withValues(alpha: .60)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
     canvas.drawPath(path, glow);
 
@@ -2789,7 +3024,7 @@ class _NeonGamePainter extends CustomPainter {
     // Main paddle
     final glow = Paint()
       ..color = NeonColors.cyan.withValues(alpha: .28)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(12)),
@@ -2831,7 +3066,7 @@ class _NeonGamePainter extends CustomPainter {
           RRect.fromRectAndRadius(rect.inflate(5), const Radius.circular(14)),
           Paint()
             ..color = color.withValues(alpha: .12)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 11),
         );
 
         // Strong neon glow
@@ -2839,7 +3074,7 @@ class _NeonGamePainter extends CustomPainter {
           RRect.fromRectAndRadius(rect.inflate(2), const Radius.circular(12)),
           Paint()
             ..color = color.withValues(alpha: .35)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
         );
 
         // Main body
@@ -2890,7 +3125,7 @@ class _NeonGamePainter extends CustomPainter {
       final bridgePaint = Paint()
         ..color = NeonColors.purple.withValues(alpha: .22)
         ..strokeWidth = 1.5
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
       canvas.drawLine(
         Offset(leftCenter.dx + sideWidth * .48, leftCenter.dy),
@@ -2921,7 +3156,7 @@ class _NeonGamePainter extends CustomPainter {
           trailRadius + 5,
           Paint()
             ..color = color.withValues(alpha: alpha * .45)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
         );
 
         // Bright inner trail.
@@ -2942,7 +3177,7 @@ class _NeonGamePainter extends CustomPainter {
         25,
         Paint()
           ..color = color.withValues(alpha: .10)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
       );
 
       canvas.drawCircle(
@@ -2950,7 +3185,7 @@ class _NeonGamePainter extends CustomPainter {
         20,
         Paint()
           ..color = color.withValues(alpha: .20)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
       );
 
       // ─────────────────────────────────────────────
@@ -2996,7 +3231,7 @@ class _NeonGamePainter extends CustomPainter {
         5.2,
         Paint()
           ..color = Colors.white.withValues(alpha: .18)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
       );
 
       // ─────────────────────────────────────────────
@@ -3023,7 +3258,7 @@ class _NeonGamePainter extends CustomPainter {
           7,
           Paint()
             ..color = Colors.yellow.withValues(alpha: .28)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
         );
 
         canvas.drawCircle(center, 3.5, Paint()..color = Colors.yellow);
@@ -3042,7 +3277,7 @@ class _NeonGamePainter extends CustomPainter {
         19,
         Paint()
           ..color = color.withValues(alpha: .25)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
       );
 
       canvas.drawCircle(
@@ -3104,7 +3339,7 @@ class _NeonGamePainter extends CustomPainter {
         2.2,
         Paint()
           ..color = Colors.white.withValues(alpha: alpha)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
       );
     }
   }
