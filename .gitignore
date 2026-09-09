@@ -55,3 +55,6 @@ NeonBreaker-Pro-main-backup-*/
 
 # Local backups
 NeonBreaker-Pro-main-backup-*/
+
+*.backup
+*.backup.*
