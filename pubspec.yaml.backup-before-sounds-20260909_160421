@@ -14,7 +14,6 @@ dependencies:
   shared_preferences: ^2.5.3
   cupertino_icons: ^1.0.8
   unity_ads_plugin: ^0.5.0
-  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.4
@@ -27,7 +26,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
-    - assets/audio/
 
 # --------------------------------------------------
 # Android launcher icon configuration

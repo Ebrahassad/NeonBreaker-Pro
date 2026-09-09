@@ -8,7 +8,6 @@ import '../core/stages/stage_pattern.dart';
 import '../core/stages/stage_reward.dart';
 import '../services/ad_service.dart';
 import '../services/save_service.dart';
-import '../services/sound_service.dart';
 import 'home_screen.dart';
 
 enum BrickType { normal, explosive, steel, bonus }
@@ -71,15 +70,6 @@ class Spark {
   final double maxLife;
 }
 
-class _ExplosionEffect {
-  _ExplosionEffect({required this.x, required this.y});
-
-  final double x;
-  final double y;
-  double life = 0.0;
-  static const double maxLife = 0.28;
-}
-
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, required this.save, this.level = 1});
 
@@ -93,7 +83,6 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _controller;
-  Duration? _lastFrameDuration;
 
   final Random _random = Random();
 
@@ -104,13 +93,9 @@ class _GameScreenState extends State<GameScreen>
 
   double _brickMoveOffset = 0.0;
   double _brickMoveDirection = 1.0;
-  double _brickMoveTurnBlend = 1.0;
-  double _brickMoveWarmup = 0.0;
-  double _brickMoveVelocity = 0.0;
   List<Brick> _savedBricks = [];
   final List<FallingPower> _powers = [];
   final List<Spark> _sparks = [];
-  final List<_ExplosionEffect> _explosions = [];
 
   double _paddle = .5;
 
@@ -150,8 +135,6 @@ class _GameScreenState extends State<GameScreen>
   double _shieldTimer = 0;
   double _laserTimer = 0;
   double _doublePaddleTimer = 0;
-  bool _vibrationEnabled = true;
-  double _fireBallTimer = 0;
 
   double _leftPaddleX = .18;
   double _rightPaddleX = .82;
@@ -167,7 +150,6 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.addObserver(this);
 
     _stageConfig = stageConfigFor(widget.level);
-    _vibrationEnabled = widget.save.vibrationEnabled;
 
     _enterFullscreen();
 
@@ -220,7 +202,6 @@ class _GameScreenState extends State<GameScreen>
     _powerStageAnnouncementTimer = 0;
 
     _paused = false;
-    _lastFrameDuration = null;
     _gameOver = false;
     _levelClear = false;
 
@@ -235,7 +216,6 @@ class _GameScreenState extends State<GameScreen>
     _shieldTimer = 0;
     _laserTimer = 0;
     _doublePaddleTimer = 0;
-    _fireBallTimer = 0;
     _leftPaddleX = .18;
     _rightPaddleX = .82;
     _leftPaddleDirection = 1;
@@ -289,8 +269,7 @@ class _GameScreenState extends State<GameScreen>
         case StagePattern.diamond:
           final diamondRow = min(7, rows - 1);
           final base =
-              layoutRow >= distance - .5 &&
-              layoutRow <= diamondRow - distance + .5;
+              layoutRow >= distance - .5 && layoutRow <= diamondRow - distance + .5;
           if (variantGroup == 1) {
             return base && !(layoutRow == 3 && layoutCol == 3);
           }
@@ -304,16 +283,12 @@ class _GameScreenState extends State<GameScreen>
 
         case StagePattern.fortress:
           final wall =
-              layoutRow == 0 ||
-              layoutRow == rows - 1 ||
-              layoutCol == 0 ||
-              layoutCol == columns - 1;
+              layoutRow == 0 || layoutRow == rows - 1 || layoutCol == 0 || layoutCol == columns - 1;
           if (variantGroup == 1) {
             return wall || (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 2) {
-            return wall ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            return wall || (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 3) {
             return wall ||
@@ -330,9 +305,7 @@ class _GameScreenState extends State<GameScreen>
             return (layoutRow + layoutCol) % 2 == 0 || layoutRow == rows ~/ 2;
           }
           if (variantGroup == 3) {
-            return (layoutRow + layoutCol) % 2 == 0 &&
-                layoutCol != 3 &&
-                layoutCol != 4;
+            return (layoutRow + layoutCol) % 2 == 0 && layoutCol != 3 && layoutCol != 4;
           }
           return (layoutRow + layoutCol) % 2 == 0;
 
@@ -341,21 +314,18 @@ class _GameScreenState extends State<GameScreen>
           final left = (columns - width) ~/ 2;
           final inside = layoutCol >= left && layoutCol < left + width;
           if (variantGroup == 1) {
-            return inside &&
-                !(layoutRow == rows - 1 && layoutCol > 1 && layoutCol < 6);
+            return inside && !(layoutRow == rows - 1 && layoutCol > 1 && layoutCol < 6);
           }
           if (variantGroup == 2) {
             return inside && (layoutRow + layoutCol) % 3 != 1;
           }
           if (variantGroup == 3) {
-            return inside ||
-                (layoutRow == 0 && layoutCol >= 3 && layoutCol <= 4);
+            return inside || (layoutRow == 0 && layoutCol >= 3 && layoutCol <= 4);
           }
           return inside;
 
         case StagePattern.cross:
-          final vertical =
-              layoutCol == columns ~/ 2 || layoutCol == columns ~/ 2 - 1;
+          final vertical = layoutCol == columns ~/ 2 || layoutCol == columns ~/ 2 - 1;
           final horizontal = layoutRow == rows ~/ 2;
           if (variantGroup == 1) {
             return vertical || horizontal || layoutRow == 1;
@@ -363,34 +333,24 @@ class _GameScreenState extends State<GameScreen>
           if (variantGroup == 2) {
             return vertical ||
                 horizontal ||
-                (layoutRow == rows ~/ 2 - 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5);
+                (layoutRow == rows ~/ 2 - 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 3) {
-            return vertical ||
-                horizontal ||
-                layoutRow == 0 ||
-                layoutRow == rows - 1;
+            return vertical || horizontal || layoutRow == 0 || layoutRow == rows - 1;
           }
           return vertical || horizontal;
 
         case StagePattern.tunnel:
           final outer =
-              layoutRow < 2 ||
-              layoutRow >= rows - 2 ||
-              layoutCol == 0 ||
-              layoutCol == columns - 1;
+              layoutRow < 2 || layoutRow >= rows - 2 || layoutCol == 0 || layoutCol == columns - 1;
           if (variantGroup == 1) {
-            return outer ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            return outer || (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 2) {
             return outer || layoutCol == 3 || layoutCol == 4;
           }
           if (variantGroup == 3) {
-            return outer ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            return outer || (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           return outer;
 
@@ -402,17 +362,12 @@ class _GameScreenState extends State<GameScreen>
               layoutCol == 0 ||
               layoutCol == columns - 1;
           if (variantGroup == 1) {
-            return frame ||
-                (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
+            return frame || (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 2) {
             return frame ||
-                (layoutRow == rows ~/ 2 - 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5) ||
-                (layoutRow == rows ~/ 2 + 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5);
+                (layoutRow == rows ~/ 2 - 2 && layoutCol >= 2 && layoutCol <= 5) ||
+                (layoutRow == rows ~/ 2 + 2 && layoutCol >= 2 && layoutCol <= 5);
           }
           if (variantGroup == 3) {
             return frame ||
@@ -470,160 +425,44 @@ class _GameScreenState extends State<GameScreen>
   // Balanced arcade speed:
   // a little snappier than before, with a gentle per-level ramp-up.
   double _initialHorizontalSpeed() {
-    // Higher base speed, but stable during the level.
-    return .62;
+    return .52;
   }
 
   double _initialVerticalSpeed() {
-    // Higher base speed, but stable during the level.
-    return .98;
+    return .82;
   }
 
   double _speedMultiplier() {
-    // Speed increases only when entering a higher level.
-    // There is no time-based acceleration inside the same level.
-    final level = widget.level.clamp(1, 100);
-    final levelSpeed = (1.0 + (level - 1) * 0.012).clamp(1.0, 2.19);
+    final levelSpeed = (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
 
     if (_powerStageActive) {
-      return levelSpeed * 1.15;
+      return levelSpeed * 1.35;
     }
 
     return levelSpeed;
   }
 
-  void _updateBrickMovement(double dt) {
-    // Moving bricks start from level 8.
+  void _updateBrickMovement() {
     if (widget.level < 8 || _bricks.isEmpty) {
-      _brickMoveVelocity = 0.0;
       return;
     }
 
     final level = widget.level.clamp(8, 100);
 
-    // Smoothly introduce moving-brick motion when the level starts.
-    // This prevents an abrupt visual jump when movement activates.
-    _brickMoveWarmup = min(1.0, _brickMoveWarmup + dt / 1.8);
+    // Very slow at level 8, gradually faster toward level 100.
+    final speed = (0.00035 + (level - 8) * 0.000006)
+        .clamp(0.00035, 0.000902);
 
-    final warmupFactor = Curves.easeInOut.transform(
-      _brickMoveWarmup.clamp(0.0, 1.0),
-    );
-
-    // Gentle level-based maximum speed.
-    final levelMaxSpeed = (0.00035 + (level - 8) * 0.000006).clamp(
-      0.00035,
-      0.000902,
-    );
+    _brickMoveOffset += speed * _brickMoveDirection;
 
     const limit = 0.055;
-    const halfBrickWidth = .054;
 
-    final movingBricks = _bricks.where((brick) => brick.alive).toList()
-      ..sort((a, b) => a.x.compareTo(b.x));
-
-    if (movingBricks.isEmpty) {
-      _brickMoveVelocity = 0.0;
-      return;
-    }
-
-    // Keep the complete formation safely inside the playable area.
-    final minX = movingBricks.first.x;
-    final maxX = movingBricks.last.x;
-
-    // A smaller remaining formation gets a slightly calmer movement.
-    // This keeps late-stage movement readable after many bricks are destroyed.
-    final formationFactor = (movingBricks.length / _bricks.length).clamp(
-      0.72,
-      1.0,
-    );
-
-    final maxSpeed = levelMaxSpeed * formationFactor;
-
-    const leftSafeEdge = .060;
-    const rightSafeEdge = .940;
-    const brakingDistance = .016;
-
-    final leftEdge = minX + _brickMoveOffset - halfBrickWidth;
-    final rightEdge = maxX + _brickMoveOffset + halfBrickWidth;
-
-    // Calculate how much room is left in the current direction.
-    double edgeFactor = 1.0;
-
-    if (_brickMoveDirection > 0) {
-      final remaining = rightSafeEdge - rightEdge;
-      edgeFactor = (remaining / brakingDistance).clamp(0.0, 1.0);
-    } else {
-      final remaining = leftEdge - leftSafeEdge;
-      edgeFactor = (remaining / brakingDistance).clamp(0.0, 1.0);
-    }
-
-    // Smooth target speed near the edges.
-    final targetSpeed =
-        maxSpeed * edgeFactor * warmupFactor * _brickMoveTurnBlend;
-
-    // 0.016 seconds is the reference 60 FPS frame.
-    final frameScale = (dt / 0.016).clamp(0.5, 1.5);
-
-    // Smooth acceleration and braking.
-    // Scale these values by frame time so the movement feels
-    // consistent across different frame rates.
-    final acceleration = 0.000030 * frameScale;
-    final deceleration = 0.000070 * frameScale;
-
-    if (_brickMoveVelocity < targetSpeed) {
-      _brickMoveVelocity = min(_brickMoveVelocity + acceleration, targetSpeed);
-    } else {
-      _brickMoveVelocity = max(_brickMoveVelocity - deceleration, targetSpeed);
-    }
-
-    // Never allow the formation to jump outside its movement range.
-    // Convert the movement velocity to elapsed-time based motion.
-    var proposedOffset =
-        _brickMoveOffset +
-        _brickMoveVelocity * frameScale * _brickMoveDirection;
-
-    proposedOffset = proposedOffset.clamp(-limit, limit);
-
-    // Hard safety against the physical screen edges.
-    final proposedLeftEdge = minX + proposedOffset - halfBrickWidth;
-    final proposedRightEdge = maxX + proposedOffset + halfBrickWidth;
-
-    if (proposedRightEdge >= rightSafeEdge) {
-      proposedOffset = rightSafeEdge - maxX - halfBrickWidth;
-      _brickMoveDirection = -1.0;
-      // Reduce speed strongly at the turning point, then
-      // let the turn-blend ramp the movement back up smoothly.
-      _brickMoveVelocity *= 0.22;
-      _brickMoveTurnBlend = 0.0;
-    } else if (proposedLeftEdge <= leftSafeEdge) {
-      proposedOffset = leftSafeEdge - minX + halfBrickWidth;
-      _brickMoveDirection = 1.0;
-      // Reduce speed strongly at the turning point, then
-      // let the turn-blend ramp the movement back up smoothly.
-      _brickMoveVelocity *= 0.22;
-      _brickMoveTurnBlend = 0.0;
-    }
-
-    _brickMoveOffset = proposedOffset.clamp(-limit, limit);
-
-    // Smooth the velocity after a direction reversal.
-    // This prevents an abrupt visual snap at the ends of the path.
-    if (_brickMoveTurnBlend < 1.0) {
-      // Gradually restore full movement after a direction change.
-      _brickMoveTurnBlend = min(1.0, _brickMoveTurnBlend + dt * 4.5);
-    }
-
-    // Keep the direction synchronized with the movement limits.
     if (_brickMoveOffset >= limit) {
       _brickMoveOffset = limit;
       _brickMoveDirection = -1.0;
-      _brickMoveVelocity *= 0.35;
-      _brickMoveTurnBlend = 0.0;
     } else if (_brickMoveOffset <= -limit) {
       _brickMoveOffset = -limit;
       _brickMoveDirection = 1.0;
-      _brickMoveVelocity *= 0.35;
-      _brickMoveTurnBlend = 0.0;
     }
   }
 
@@ -632,28 +471,16 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
-    final currentDuration = _controller.lastElapsedDuration;
-
-    final rawDt = currentDuration == null || _lastFrameDuration == null
-        ? .016
-        : (currentDuration - _lastFrameDuration!).inMicroseconds / 1000000.0;
-
-    _lastFrameDuration = currentDuration;
-
-    // Keep physics stable during occasional rendering hitches.
-    // Speed does not increase during the level.
-    final dt = rawDt.clamp(0.008, 0.024);
-
+    final dt = .016;
     var shouldCompleteLevel = false;
 
     setState(() {
       _stageElapsed += dt;
       _updateTimers(dt);
-      _updateBrickMovement(dt);
+      _updateBrickMovement();
       _updateBalls(dt);
       _updatePowers(dt);
       _updateSparks(dt);
-      _updateExplosions(dt);
 
       if (_bricks.every((brick) => !brick.alive)) {
         shouldCompleteLevel = true;
@@ -723,16 +550,6 @@ class _GameScreenState extends State<GameScreen>
 
       if (_laserTimer <= 0) {
         _laser = false;
-      }
-    }
-
-    if (_fireBallTimer > 0) {
-      _fireBallTimer -= dt;
-      if (_fireBallTimer <= 0) {
-        _fireBallTimer = 0;
-        for (final ball in _balls) {
-          ball.fire = false;
-        }
       }
     }
 
@@ -842,18 +659,9 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  void _vibrate({bool strong = false}) {
-    if (!_vibrationEnabled) return;
-    if (strong) {
-      HapticFeedback.heavyImpact();
-    } else {
-      HapticFeedback.lightImpact();
-    }
-  }
-
   void _checkPaddle(Ball ball) {
     final paddleWidth = _powerStageActive
-        ? .34
+        ? .88
         : _widePaddle
         ? .31
         : .23;
@@ -894,8 +702,6 @@ class _GameScreenState extends State<GameScreen>
 
       ball.vy = -_initialVerticalSpeed();
 
-      SoundService.instance.playPaddle();
-      _vibrate();
       _impact(ball.x, paddleY);
       _addSparks(ball.x, paddleY, 8);
     }
@@ -940,8 +746,6 @@ class _GameScreenState extends State<GameScreen>
 
         ball.vy = -_initialVerticalSpeed();
 
-        SoundService.instance.playPaddle();
-        _vibrate();
         _impact(ball.x, paddleY);
         _addSparks(ball.x, paddleY, 10);
 
@@ -967,10 +771,7 @@ class _GameScreenState extends State<GameScreen>
       const halfW = .056;
       const halfH = .019;
 
-      final closestX = ball.x.clamp(
-        brick.x + _brickMoveOffset - halfW,
-        brick.x + _brickMoveOffset + halfW,
-      );
+      final closestX = ball.x.clamp(brick.x + _brickMoveOffset - halfW, brick.x + _brickMoveOffset + halfW);
 
       final closestY = ball.y.clamp(brick.y - halfH, brick.y + halfH);
 
@@ -1004,8 +805,6 @@ class _GameScreenState extends State<GameScreen>
 
     if (brick.hp <= 0) {
       brick.alive = false;
-      SoundService.instance.playBrick();
-      _vibrate(strong: true);
 
       if (brick.type == BrickType.explosive) {
         _explodeBrick(brick);
@@ -1057,12 +856,13 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
-    // POWER STAGE activates at sequential combo milestones.
-    // From level 2 onward: 36, 72, 108, ...
+    // POWER STAGE activates at sequential combo milestones:
+    // 12, 24, 36, 48, ...
     //
-    // This keeps Power Stage rewarding without triggering too often.
+    // This prevents Power Stage from immediately reactivating after
+    // its timer expires while the combo is still above 12.
 
-    const comboStep = 36;
+    const comboStep = 12;
     final nextPowerStageCombo = _lastPowerStageCombo + comboStep;
 
     _powerStage = ((_combo % comboStep) / comboStep * 100.0).clamp(0.0, 100.0);
@@ -1083,20 +883,18 @@ class _GameScreenState extends State<GameScreen>
     _widePaddle = true;
     _wideTimer = 8.0;
 
-    // Power Stage does NOT grant Fire Ball.
-    // Fire Ball remains available only through its normal power-up.
+    // Give every active ball the power-stage fire effect.
+    for (final ball in _balls) {
+      ball.fire = true;
+    }
 
     _score += 250;
     _addSparks(_paddle, .88, 60);
   }
 
   void _explodeBrick(Brick center) {
-    // Main explosion.
-    _explosions.add(_ExplosionEffect(x: center.x, y: center.y));
+    _addSparks(center.x, center.y, 35);
 
-    _addSparks(center.x, center.y, 60);
-
-    // Damage nearby bricks and create secondary impacts.
     for (final brick in _bricks) {
       if (!brick.alive || identical(brick, center)) {
         continue;
@@ -1104,14 +902,9 @@ class _GameScreenState extends State<GameScreen>
 
       final dx = brick.x - center.x;
       final dy = brick.y - center.y;
-      final distance = sqrt(dx * dx + dy * dy);
 
-      if (distance < .18) {
-        brick.flashing = true;
+      if (sqrt(dx * dx + dy * dy) < .18) {
         brick.hp--;
-
-        // Strong impact sparks on affected bricks.
-        _addSparks(brick.x, brick.y, 14);
 
         if (brick.hp <= 0) {
           brick.alive = false;
@@ -1120,29 +913,7 @@ class _GameScreenState extends State<GameScreen>
           if (brick.type == BrickType.bonus) {
             _score += 50;
           }
-
-          // Secondary burst when an explosive brick is destroyed
-          // by another explosion.
-          if (brick.type == BrickType.explosive) {
-            _explosions.add(_ExplosionEffect(x: brick.x, y: brick.y));
-            _addSparks(brick.x, brick.y, 28);
-          }
         }
-
-        Future<void>.delayed(const Duration(milliseconds: 120), () {
-          if (mounted) {
-            brick.flashing = false;
-          }
-        });
-      }
-    }
-  }
-
-  void _updateExplosions(double dt) {
-    for (final explosion in List<_ExplosionEffect>.from(_explosions)) {
-      explosion.life += dt;
-      if (explosion.life >= _ExplosionEffect.maxLife) {
-        _explosions.remove(explosion);
       }
     }
   }
@@ -1224,7 +995,6 @@ class _GameScreenState extends State<GameScreen>
         for (final ball in _balls) {
           ball.fire = true;
         }
-        _fireBallTimer = 8.0;
         break;
 
       case PowerType.widePaddle:
@@ -1262,49 +1032,40 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
-    // First consume the normal red lives.
-    if (_lives > 0) {
-      _lives--;
+    _lives--;
 
-      _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
+    // Losing a life breaks the combo and heavily drains Power Stage.
+    _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
 
-      if (_powerStageActive) {
-        _powerStageActive = false;
-        _powerStageTimer = 0;
-        _powerStageAnnouncementTimer = 0;
+    if (_powerStageActive) {
+      _powerStageActive = false;
+      _powerStageTimer = 0;
+      _powerStageAnnouncementTimer = 0;
 
-        for (final ball in _balls) {
-          ball.fire = false;
-        }
+      for (final ball in _balls) {
+        ball.fire = false;
       }
+    }
 
-      // Red lives are still available.
-      if (_lives > 0) {
+    if (_lives <= 0) {
+      _saveBrickState();
+      // Use a saved extra life before declaring game over.
+      if (widget.save.extraLives > 0) {
+        widget.save.setExtraLives(widget.save.extraLives - 1);
+        _lives = 1;
         _resetBalls();
         return;
       }
-    }
 
-    // All 3 red lives are gone.
-    // Now consume a saved yellow extra life.
-    if (widget.save.extraLives > 0) {
-      widget.save.setExtraLives(widget.save.extraLives - 1);
+      _lives = 0;
+      _gameOver = true;
+      _controller.stop();
 
-      // Give the player one temporary red life to continue.
-      _lives = 1;
-
-      _saveBrickState();
-      _resetBalls();
+      widget.save.saveLevelScore(widget.level, _score);
       return;
     }
 
-    // No red lives and no yellow extra lives remain.
-    _lives = 0;
-    _saveBrickState();
-    _gameOver = true;
-    _controller.stop();
-
-    widget.save.saveLevelScore(widget.level, _score);
+    _resetBalls();
   }
 
   void _saveBrickState() {
@@ -1562,7 +1323,6 @@ class _GameScreenState extends State<GameScreen>
       );
     }
 
-    // Prevent an excessive number of particles from hurting FPS.
     if (_sparks.length > 350) {
       _sparks.removeRange(0, _sparks.length - 350);
     }
@@ -1610,9 +1370,6 @@ class _GameScreenState extends State<GameScreen>
       onReward: () {
         if (!mounted || !_gameOver) return;
 
-        // Rewarded ad grants one persistent yellow extra life.
-        widget.save.addExtraLives(1);
-
         setState(() {
           _gameOver = false;
           _lives = 1;
@@ -1635,7 +1392,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('Reward granted! +1 🟡 Yellow Life'),
+                content: Text('You got another chance!'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -1678,7 +1435,7 @@ class _GameScreenState extends State<GameScreen>
             ..hideCurrentSnackBar()
             ..showSnackBar(
               const SnackBar(
-                content: Text('Reward granted! +1 🟡 Yellow Life'),
+                content: Text('Bonus reward! +1 ❤️'),
                 duration: Duration(seconds: 2),
               ),
             );
@@ -2290,12 +2047,10 @@ class _GameScreenState extends State<GameScreen>
                 CustomPaint(
                   painter: _NeonGamePainter(
                     level: widget.level,
-                    stageElapsed: _stageElapsed,
                     stageName: _stageName,
                     stageChallenge: _stageChallenge,
                     score: _score,
                     lives: _lives,
-                    extraLives: widget.save.extraLives,
                     combo: _combo,
                     powerStage: _powerStage,
                     powerStageActive: _powerStageActive,
@@ -2310,7 +2065,6 @@ class _GameScreenState extends State<GameScreen>
                     bricks: _bricks,
                     powers: _powers,
                     sparks: _sparks,
-                    explosions: _explosions,
                     paused: _paused,
                     gameOver: _gameOver,
                     levelClear: _levelClear,
@@ -2318,7 +2072,6 @@ class _GameScreenState extends State<GameScreen>
                     shield: _shield,
                     laser: _laser,
                     doublePaddle: _doublePaddle,
-                    brickMoveOffset: _brickMoveOffset,
                     leftPaddleX: _leftPaddleX,
                     rightPaddleX: _rightPaddleX,
                   ),
@@ -2368,7 +2121,6 @@ class _GameScreenState extends State<GameScreen>
 class _NeonGamePainter extends CustomPainter {
   _NeonGamePainter({
     required this.level,
-    required this.stageElapsed,
     required this.stageName,
     required this.stageChallenge,
     required this.score,
@@ -2377,7 +2129,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.stageMechanicActive,
     required this.stageMechanicTimer,
     required this.lives,
-    required this.extraLives,
     required this.combo,
     required this.powerStage,
     required this.powerStageActive,
@@ -2388,7 +2139,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.bricks,
     required this.powers,
     required this.sparks,
-    required this.explosions,
     required this.paused,
     required this.gameOver,
     required this.levelClear,
@@ -2396,13 +2146,11 @@ class _NeonGamePainter extends CustomPainter {
     required this.shield,
     required this.laser,
     required this.doublePaddle,
-    required this.brickMoveOffset,
     required this.leftPaddleX,
     required this.rightPaddleX,
   });
 
   final int level;
-  final double stageElapsed;
   final String stageName;
   final String stageChallenge;
   final int score;
@@ -2411,7 +2159,6 @@ class _NeonGamePainter extends CustomPainter {
   final bool stageMechanicActive;
   final double stageMechanicTimer;
   final int lives;
-  final int extraLives;
   final int combo;
 
   final double powerStage;
@@ -2425,7 +2172,6 @@ class _NeonGamePainter extends CustomPainter {
   final List<Brick> bricks;
   final List<FallingPower> powers;
   final List<Spark> sparks;
-  final List<_ExplosionEffect> explosions;
 
   final bool paused;
   final bool gameOver;
@@ -2435,39 +2181,11 @@ class _NeonGamePainter extends CustomPainter {
   final bool shield;
   final bool laser;
   final bool doublePaddle;
-  final double brickMoveOffset;
   final double leftPaddleX;
   final double rightPaddleX;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Short visual camera shake while an explosion is active.
-    double shakeX = 0.0;
-    double shakeY = 0.0;
-
-    if (explosions.isNotEmpty) {
-      double strongest = 0.0;
-
-      for (final explosion in explosions) {
-        final progress = (explosion.life / _ExplosionEffect.maxLife).clamp(
-          0.0,
-          1.0,
-        );
-        final strength = (1.0 - progress) * 4.0;
-        if (strength > strongest) {
-          strongest = strength;
-        }
-      }
-
-      if (strongest > 0.0) {
-        shakeX = sin(explosions.first.life * 95.0) * strongest;
-        shakeY = cos(explosions.first.life * 117.0) * strongest;
-      }
-    }
-
-    canvas.save();
-    canvas.translate(shakeX, shakeY);
-
     _background(canvas, size);
     _drawHud(canvas, size);
     _drawBricks(canvas, size);
@@ -2475,170 +2193,6 @@ class _NeonGamePainter extends CustomPainter {
     _drawPaddle(canvas, size);
     _drawBalls(canvas, size);
     _drawSparks(canvas, size);
-    _drawExplosionEffects(canvas, size);
-
-    if (paused) {
-      _drawCenterNeonPause(canvas, size);
-    }
-
-    canvas.restore();
-  }
-
-  void _drawExplosionEffects(Canvas canvas, Size size) {
-    for (final explosion in explosions) {
-      final progress = (explosion.life / _ExplosionEffect.maxLife).clamp(
-        0.0,
-        1.0,
-      );
-      final alpha = (1.0 - progress).clamp(0.0, 1.0);
-
-      final center = Offset(
-        explosion.x * size.width,
-        explosion.y * size.height,
-      );
-
-      // Main expanding radius.
-      final radius = 8.0 + progress * 42.0;
-
-      // ----------------------------------------------------------
-      // OUTER NEON AURA
-      // ----------------------------------------------------------
-      canvas.drawCircle(
-        center,
-        radius + 12,
-        Paint()
-          ..color = NeonColors.orange.withValues(alpha: alpha * .14)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
-      );
-
-      // ----------------------------------------------------------
-      // OUTER SHOCKWAVE
-      // ----------------------------------------------------------
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.0 * (1.0 - progress * .65)
-          ..color = NeonColors.orange.withValues(alpha: alpha * .9)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-      );
-
-      // ----------------------------------------------------------
-      // SECONDARY SHOCKWAVE
-      // ----------------------------------------------------------
-      final innerWaveRadius = radius * .68;
-
-      canvas.drawCircle(
-        center,
-        innerWaveRadius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 * (1.0 - progress)
-          ..color = NeonColors.yellow.withValues(alpha: alpha * .85),
-      );
-
-      // ----------------------------------------------------------
-      // EXPLOSION RAYS
-      // ----------------------------------------------------------
-      final rayPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 2.2
-        ..color = Colors.orangeAccent.withValues(alpha: alpha * .95)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-      for (int i = 0; i < 8; i++) {
-        final angle = i * pi / 4.0 + pi / 8.0;
-
-        final inner = radius * .38;
-        final outer = radius * (0.78 + (i.isEven ? .16 : .06));
-
-        final startPoint = Offset(
-          center.dx + cos(angle) * inner,
-          center.dy + sin(angle) * inner,
-        );
-
-        final endPoint = Offset(
-          center.dx + cos(angle) * outer,
-          center.dy + sin(angle) * outer,
-        );
-
-        canvas.drawLine(startPoint, endPoint, rayPaint);
-      }
-
-      // Crisp white ray layer.
-      final whiteRayPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 1.0
-        ..color = Colors.white.withValues(alpha: alpha * .8);
-
-      for (int i = 0; i < 8; i++) {
-        final angle = i * pi / 4.0 + pi / 8.0;
-
-        final inner = radius * .48;
-        final outer = radius * (0.72 + (i.isEven ? .13 : .04));
-
-        canvas.drawLine(
-          Offset(
-            center.dx + cos(angle) * inner,
-            center.dy + sin(angle) * inner,
-          ),
-          Offset(
-            center.dx + cos(angle) * outer,
-            center.dy + sin(angle) * outer,
-          ),
-          whiteRayPaint,
-        );
-      }
-
-      // ----------------------------------------------------------
-      // HOT CORE
-      // ----------------------------------------------------------
-      final coreRadius = 12.0 * (1.0 - progress * .35);
-
-      canvas.drawCircle(
-        center,
-        coreRadius + 7,
-        Paint()
-          ..color = NeonColors.orange.withValues(alpha: alpha * .30)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius,
-        Paint()..color = NeonColors.orange.withValues(alpha: alpha * .95),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius * .58,
-        Paint()..color = NeonColors.yellow.withValues(alpha: alpha),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius * .28,
-        Paint()..color = Colors.white.withValues(alpha: alpha),
-      );
-
-      // ----------------------------------------------------------
-      // INITIAL WHITE FLASH
-      // ----------------------------------------------------------
-      if (progress < .30) {
-        final flashAlpha = ((.30 - progress) / .30).clamp(0.0, 1.0);
-
-        canvas.drawCircle(
-          center,
-          18.0 + progress * 20.0,
-          Paint()
-            ..color = Colors.white.withValues(alpha: flashAlpha * .30)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
-        );
-      }
-    }
   }
 
   void _background(Canvas canvas, Size size) {
@@ -2802,69 +2356,7 @@ class _NeonGamePainter extends CustomPainter {
         30 + (1 - pulse) * 8,
         NeonColors.cyan,
       );
-
-      _centerText(
-        canvas,
-        'ACTIVE',
-        Offset(size.width / 2, size.height * .50 + 38),
-        13,
-        NeonColors.yellow,
-      );
     }
-  }
-
-  void _drawCenterNeonPause(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    const radius = 34.0;
-
-    // Soft outer neon glow.
-    canvas.drawCircle(
-      center,
-      radius + 12,
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .10)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
-    );
-
-    // Main neon glow ring.
-    canvas.drawCircle(
-      center,
-      radius + 3,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
-        ..color = NeonColors.cyan.withValues(alpha: .35)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // Dark glass center.
-    canvas.drawCircle(center, radius, Paint()..color = const Color(0xDD05020D));
-
-    // Crisp neon border.
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..color = NeonColors.cyan,
-    );
-
-    // Neon play symbol.
-    final path = Path()
-      ..moveTo(center.dx - 8, center.dy - 13)
-      ..lineTo(center.dx + 14, center.dy)
-      ..lineTo(center.dx - 8, center.dy + 13)
-      ..close();
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .28)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
-
-    canvas.drawPath(path, Paint()..color = NeonColors.cyan);
   }
 
   void _drawHud(Canvas canvas, Size size) {
@@ -2917,23 +2409,19 @@ class _NeonGamePainter extends CustomPainter {
     _text(
       canvas,
       '♥ $lives',
-      Offset(size.width - 112, top),
+      Offset(size.width - 92, top),
       13,
       NeonColors.pink,
     );
 
-    if (extraLives > 0) {
-      _text(
+    if (paused) {
+      _iconButton(
         canvas,
-        '♥ $extraLives',
-        Offset(size.width - 55, top),
-        13,
-        NeonColors.yellow,
+        Offset(size.width / 2, size.height / 2),
+        Icons.play_arrow,
+        large: true,
       );
-    }
-
-    // The normal pause button remains in the top-right HUD.
-    if (!paused) {
+    } else {
       _iconButton(canvas, Offset(size.width - 30, 45), Icons.pause);
     }
 
@@ -2951,7 +2439,7 @@ class _NeonGamePainter extends CustomPainter {
       const gameplayTopOffset = .055;
 
       final center = Offset(
-        (brick.x + brickMoveOffset) * size.width,
+        brick.x * size.width,
         (brick.y + gameplayTopOffset) * size.height,
       );
 
@@ -2970,30 +2458,10 @@ class _NeonGamePainter extends CustomPainter {
 
       // ----------------------------------------------------------
       // SOFT NEON AURA
-      // Explosive bricks pulse harder when hit.
       // ----------------------------------------------------------
-      final explosivePulse =
-          brick.type == BrickType.explosive && brick.flashing;
-
       final aura = Paint()
-        ..color = color.withValues(
-          alpha: explosivePulse ? .95 : (brick.flashing ? .70 : .30),
-        )
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          explosivePulse ? 20 : 14,
-        );
-
-      if (explosivePulse) {
-        canvas.drawRRect(
-          rrect,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3.5
-            ..color = Colors.white.withValues(alpha: .75)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-        );
-      }
+        ..color = color.withValues(alpha: brick.flashing ? .70 : .30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
 
       canvas.drawRRect(rrect, aura);
 
@@ -3091,25 +2559,6 @@ class _NeonGamePainter extends CustomPainter {
 
         case BrickType.explosive:
           _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
-
-          // Animated charging ring around explosive bricks.
-          final pulse = (sin(stageElapsed * 8.0) + 1.0) * .5;
-
-          final chargeAlpha = brick.flashing ? .95 : (.34 + pulse * .30);
-
-          final chargeRadius = min(width, height) * (.32 + pulse * .05);
-
-          final chargePaint = Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = brick.flashing ? 2.6 : 1.2 + pulse * .8
-            ..color = color.withValues(alpha: chargeAlpha)
-            ..maskFilter = MaskFilter.blur(
-              BlurStyle.normal,
-              brick.flashing ? 6 : 3 + pulse * 2,
-            );
-
-          canvas.drawCircle(center, chargeRadius, chargePaint);
-
           break;
 
         case BrickType.steel:
@@ -3141,24 +2590,18 @@ class _NeonGamePainter extends CustomPainter {
     double size,
     Color color,
   ) {
-    // ----------------------------------------------------------
-    // OUTER WARNING GLOW
-    // ----------------------------------------------------------
-    final outerGlow = Paint()
-      ..color = color.withValues(alpha: .30)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+    final glow = Paint()
+      ..color = color.withValues(alpha: .65)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
-    canvas.drawCircle(center, size * .43, outerGlow);
+    canvas.drawCircle(center, size * .25, glow);
 
-    // ----------------------------------------------------------
-    // ROTATED EXPLOSION CORE
-    // ----------------------------------------------------------
     final path = Path();
     const points = 8;
 
     for (int i = 0; i < points; i++) {
       final angle = -pi / 2 + i * pi / 4;
-      final radius = i.isEven ? size * .30 : size * .17;
+      final radius = i.isEven ? size * .25 : size * .11;
 
       final point = Offset(
         center.dx + cos(angle) * radius,
@@ -3174,7 +2617,6 @@ class _NeonGamePainter extends CustomPainter {
 
     path.close();
 
-    // Main explosive body.
     canvas.drawPath(
       path,
       Paint()
@@ -3182,66 +2624,32 @@ class _NeonGamePainter extends CustomPainter {
         ..color = color,
     );
 
-    // Bright neon outline.
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = Colors.white.withValues(alpha: .95)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
     );
 
-    // ----------------------------------------------------------
-    // HOT CENTER
-    // ----------------------------------------------------------
-    canvas.drawCircle(
-      center,
-      size * .115,
-      Paint()
-        ..color = Colors.white
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
+    // Explosion core.
+    canvas.drawCircle(center, size * .075, Paint()..color = Colors.white);
 
-    canvas.drawCircle(center, size * .065, Paint()..color = Colors.white);
+    // Small sparks.
+    final sparkPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .85)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
 
-    // ----------------------------------------------------------
-    // WARNING RAYS
-    // ----------------------------------------------------------
-    final rayPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: .85);
-
-    for (int i = 0; i < 8; i++) {
-      final angle = i * pi / 4 + pi / 8;
-
-      final inner = size * .34;
-      final outer = size * .44;
+    for (int i = 0; i < 4; i++) {
+      final angle = i * pi / 2 + pi / 4;
+      final inner = size * .27;
+      final outer = size * .36;
 
       canvas.drawLine(
         Offset(center.dx + cos(angle) * inner, center.dy + sin(angle) * inner),
         Offset(center.dx + cos(angle) * outer, center.dy + sin(angle) * outer),
-        rayPaint,
-      );
-    }
-
-    // ----------------------------------------------------------
-    // FOUR SMALL SPARK POINTS
-    // ----------------------------------------------------------
-    for (int i = 0; i < 4; i++) {
-      final angle = i * pi / 2 + pi / 4;
-
-      final point = Offset(
-        center.dx + cos(angle) * size * .39,
-        center.dy + sin(angle) * size * .39,
-      );
-
-      canvas.drawCircle(
-        point,
-        size * .035,
-        Paint()..color = Colors.white.withValues(alpha: .9),
+        sparkPaint,
       );
     }
   }
@@ -3383,97 +2791,31 @@ class _NeonGamePainter extends CustomPainter {
     final height = size.height * .036;
     final rect = Rect.fromCenter(center: center, width: width, height: height);
 
-    // MAIN PADDLE — Rainbow Neon Design
+    // Main paddle
+    final glow = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
 
-    final radius = const Radius.circular(14);
-    final paddleRRect = RRect.fromRectAndRadius(rect, radius);
-
-    // Large outer neon glow.
     canvas.drawRRect(
-      paddleRRect.inflate(7),
-      Paint()
-        ..color = NeonColors.purple.withValues(alpha: .18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      glow,
     );
 
-    // Cyan/pink secondary glow.
     canvas.drawRRect(
-      paddleRRect.inflate(3),
-      Paint()
-        ..color = NeonColors.cyan.withValues(alpha: .32)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      Paint()..color = NeonColors.cyan,
     );
 
-    // Rainbow neon body.
-    final rainbowShader = const LinearGradient(
-      colors: [
-        NeonColors.pink,
-        NeonColors.purple,
-        NeonColors.cyan,
-        NeonColors.green,
-        NeonColors.yellow,
-      ],
-    ).createShader(rect);
-
-    canvas.drawRRect(paddleRRect, Paint()..shader = rainbowShader);
-
-    // Bright neon border.
-    canvas.drawRRect(
-      paddleRRect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..color = Colors.white.withValues(alpha: .85),
-    );
-
-    // Dark glass inner panel.
+    // Inner bar gives the paddle a cleaner look.
     final inner = Rect.fromCenter(
-      center: Offset(center.dx, center.dy + height * .02),
-      width: width * .78,
-      height: height * .42,
+      center: Offset(center.dx, center.dy - height * .12),
+      width: width * .72,
+      height: height * .22,
     );
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(inner, const Radius.circular(6)),
-      Paint()..color = const Color(0xCC09051A),
-    );
-
-    // Bright energy line.
-    final energyPaint = Paint()
-      ..color = Colors.white.withValues(alpha: .95)
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    canvas.drawLine(
-      Offset(center.dx - width * .30, center.dy),
-      Offset(center.dx + width * .30, center.dy),
-      energyPaint,
-    );
-
-    // Crisp energy line.
-    canvas.drawLine(
-      Offset(center.dx - width * .24, center.dy),
-      Offset(center.dx + width * .24, center.dy),
-      Paint()
-        ..color = Colors.white
-        ..strokeWidth = 1.2
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Neon end caps.
-    final capPaint = Paint()..color = Colors.white;
-
-    canvas.drawCircle(
-      Offset(center.dx - width * .43, center.dy),
-      2.5,
-      capPaint,
-    );
-
-    canvas.drawCircle(
-      Offset(center.dx + width * .43, center.dy),
-      2.5,
-      capPaint,
+      RRect.fromRectAndRadius(inner, const Radius.circular(5)),
+      Paint()..color = Colors.white.withValues(alpha: .85),
     );
 
     if (doublePaddle) {
@@ -3481,9 +2823,8 @@ class _NeonGamePainter extends CustomPainter {
       final sideWidth = size.width * .18;
       final sideHeight = size.height * .030;
 
-      // Bonus paddles remain below the brick field at different heights.
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .90);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .84);
+      final leftCenter = Offset(leftPaddleX * size.width, size.height * .875);
+      final rightCenter = Offset(rightPaddleX * size.width, size.height * .845);
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
@@ -3701,39 +3042,18 @@ class _NeonGamePainter extends CustomPainter {
 
       final color = _powerColor(power.type);
 
-      // Outer neon glow.
       canvas.drawCircle(
         center,
-        23,
+        19,
         Paint()
-          ..color = color.withValues(alpha: .16)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+          ..color = color.withValues(alpha: .25)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
       );
 
-      // Bright secondary glow.
-      canvas.drawCircle(
-        center,
-        18,
-        Paint()
-          ..color = color.withValues(alpha: .30)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-      );
-
-      // Solid neon power-up body.
       canvas.drawCircle(
         center,
         13,
-        Paint()..color = color.withValues(alpha: .95),
-      );
-
-      // Crisp inner highlight.
-      canvas.drawCircle(
-        center,
-        9,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = Colors.white.withValues(alpha: .55),
+        Paint()..color = color.withValues(alpha: .9),
       );
 
       _text(
@@ -3784,44 +3104,12 @@ class _NeonGamePainter extends CustomPainter {
     for (final spark in sparks) {
       final alpha = (spark.life / spark.maxLife).clamp(0.0, 1.0);
 
-      final x = spark.x * size.width;
-      final y = spark.y * size.height;
-
-      // Particle trail direction.
-      final trailLength = 7.0 * alpha;
-      final dx = spark.vx * trailLength;
-      final dy = spark.vy * trailLength;
-
-      // Soft neon glow.
-      final glowPaint = Paint()
-        ..color = Colors.white.withValues(alpha: alpha * .30)
-        ..strokeWidth = 4.5
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-
-      canvas.drawLine(
-        Offset(x - dx, y - dy),
-        Offset(x + dx, y + dy),
-        glowPaint,
-      );
-
-      // Sharp bright spark core.
-      final corePaint = Paint()
-        ..color = Colors.white.withValues(alpha: alpha * .95)
-        ..strokeWidth = 1.7
-        ..strokeCap = StrokeCap.round;
-
-      canvas.drawLine(
-        Offset(x - dx, y - dy),
-        Offset(x + dx, y + dy),
-        corePaint,
-      );
-
-      // Tiny hot center.
       canvas.drawCircle(
-        Offset(x, y),
-        1.5,
-        Paint()..color = Colors.white.withValues(alpha: alpha),
+        Offset(spark.x * size.width, spark.y * size.height),
+        2.2,
+        Paint()
+          ..color = Colors.white.withValues(alpha: alpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
       );
     }
   }

@@ -39,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return AlertDialog(
           backgroundColor: const Color(0xFF0E0620),
           title: const Text(
-            'Previous crash detected',
+            'تم رصد كراش سابق',
             style: TextStyle(color: Colors.white),
           ),
           content: SizedBox(

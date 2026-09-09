@@ -1,0 +1,33 @@
+import 'package:audioplayers/audioplayers.dart';
+
+class SoundService {
+  SoundService._();
+
+  static final SoundService instance = SoundService._();
+
+  final AudioPlayer _brickPlayer = AudioPlayer();
+  final AudioPlayer _paddlePlayer = AudioPlayer();
+
+  Future<void> playBrick() async {
+    try {
+      await _brickPlayer.stop();
+      await _brickPlayer.play(
+        AssetSource('audio/brik.mp3'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> playPaddle() async {
+    try {
+      await _paddlePlayer.stop();
+      await _paddlePlayer.play(
+        AssetSource('audio/ping.wav'),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> dispose() async {
+    await _brickPlayer.dispose();
+    await _paddlePlayer.dispose();
+  }
+}

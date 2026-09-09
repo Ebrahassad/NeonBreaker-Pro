@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/save_service.dart';
-import '../services/sound_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.save});
@@ -19,7 +18,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     sound = widget.save.soundEnabled;
-    SoundService.instance.setEnabled(sound);
     vibration = widget.save.vibrationEnabled;
   }
 
@@ -35,7 +33,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Sound'),
             onChanged: (v) async {
               setState(() => sound = v);
-              SoundService.instance.setEnabled(v);
               await widget.save.setSound(v);
             },
           ),
@@ -64,7 +61,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() {
                 sound = true;
                 vibration = true;
-                SoundService.instance.setEnabled(true);
               });
             },
             child: const Text('RESET PROGRESS'),
