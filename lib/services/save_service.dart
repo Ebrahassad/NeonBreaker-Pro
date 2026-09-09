@@ -30,8 +30,6 @@ class SaveService {
 
   bool get soundEnabled => _prefs.getBool('sound') ?? true;
 
-  bool get vibrationEnabled => _prefs.getBool('vibration') ?? true;
-
   int bestScoreForLevel(int level) {
     return _prefs.getInt('level_score_$level') ?? 0;
   }
@@ -108,10 +106,6 @@ class SaveService {
 
   Future<void> setSound(bool value) async {
     await _prefs.setBool('sound', value);
-  }
-
-  Future<void> setVibration(bool value) async {
-    await _prefs.setBool('vibration', value);
   }
 
   // ----------------------------------------------------------

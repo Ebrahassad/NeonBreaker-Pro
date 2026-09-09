@@ -13,14 +13,12 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late bool sound;
-  late bool vibration;
 
   @override
   void initState() {
     super.initState();
     sound = widget.save.soundEnabled;
     SoundService.instance.setEnabled(sound);
-    vibration = widget.save.vibrationEnabled;
   }
 
   @override
@@ -39,14 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await widget.save.setSound(v);
             },
           ),
-          SwitchListTile(
-            value: vibration,
-            title: const Text('Vibration'),
-            onChanged: (v) async {
-              setState(() => vibration = v);
-              await widget.save.setVibration(v);
-            },
-          ),
+
           const SizedBox(height: 20),
           ListTile(
             title: const Text('Best Score'),
@@ -63,7 +54,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               setState(() {
                 sound = true;
-                vibration = true;
                 SoundService.instance.setEnabled(true);
               });
             },

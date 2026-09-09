@@ -71,15 +71,6 @@ class Spark {
   final double maxLife;
 }
 
-class _ExplosionEffect {
-  _ExplosionEffect({required this.x, required this.y});
-
-  final double x;
-  final double y;
-  double life = 0.0;
-  static const double maxLife = 0.28;
-}
-
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, required this.save, this.level = 1});
 
@@ -104,13 +95,9 @@ class _GameScreenState extends State<GameScreen>
 
   double _brickMoveOffset = 0.0;
   double _brickMoveDirection = 1.0;
-  double _brickMoveTurnBlend = 1.0;
-  double _brickMoveWarmup = 0.0;
-  double _brickMoveVelocity = 0.0;
   List<Brick> _savedBricks = [];
   final List<FallingPower> _powers = [];
   final List<Spark> _sparks = [];
-  final List<_ExplosionEffect> _explosions = [];
 
   double _paddle = .5;
 
@@ -150,7 +137,6 @@ class _GameScreenState extends State<GameScreen>
   double _shieldTimer = 0;
   double _laserTimer = 0;
   double _doublePaddleTimer = 0;
-  bool _vibrationEnabled = true;
   double _fireBallTimer = 0;
 
   double _leftPaddleX = .18;
@@ -167,7 +153,6 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.addObserver(this);
 
     _stageConfig = stageConfigFor(widget.level);
-    _vibrationEnabled = widget.save.vibrationEnabled;
 
     _enterFullscreen();
 
@@ -197,6 +182,8 @@ class _GameScreenState extends State<GameScreen>
   void _createLevel() {
     _balls.clear();
     _bricks.clear();
+    _brickMoveOffset = 0.0;
+    _brickMoveDirection = 1.0;
     _powers.clear();
     _sparks.clear();
 
@@ -493,138 +480,47 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _updateBrickMovement(double dt) {
-    // Moving bricks start from level 8.
+    // Very simple horizontal movement starting from level 8.
     if (widget.level < 8 || _bricks.isEmpty) {
-      _brickMoveVelocity = 0.0;
       return;
     }
-
-    final level = widget.level.clamp(8, 100);
-
-    // Smoothly introduce moving-brick motion when the level starts.
-    // This prevents an abrupt visual jump when movement activates.
-    _brickMoveWarmup = min(1.0, _brickMoveWarmup + dt / 1.8);
-
-    final warmupFactor = Curves.easeInOut.transform(
-      _brickMoveWarmup.clamp(0.0, 1.0),
-    );
-
-    // Gentle level-based maximum speed.
-    final levelMaxSpeed = (0.00035 + (level - 8) * 0.000006).clamp(
-      0.00035,
-      0.000902,
-    );
-
-    const limit = 0.055;
-    const halfBrickWidth = .054;
 
     final movingBricks = _bricks.where((brick) => brick.alive).toList()
       ..sort((a, b) => a.x.compareTo(b.x));
 
     if (movingBricks.isEmpty) {
-      _brickMoveVelocity = 0.0;
       return;
     }
 
-    // Keep the complete formation safely inside the playable area.
+    // Small, calm movement range.
+    const limit = 0.025;
+    const speed = 0.00045;
+    const halfBrickWidth = .054;
+    const leftSafeEdge = .060;
+    const rightSafeEdge = .940;
+
     final minX = movingBricks.first.x;
     final maxX = movingBricks.last.x;
 
-    // A smaller remaining formation gets a slightly calmer movement.
-    // This keeps late-stage movement readable after many bricks are destroyed.
-    final formationFactor = (movingBricks.length / _bricks.length).clamp(
-      0.72,
-      1.0,
-    );
-
-    final maxSpeed = levelMaxSpeed * formationFactor;
-
-    const leftSafeEdge = .060;
-    const rightSafeEdge = .940;
-    const brakingDistance = .016;
-
-    final leftEdge = minX + _brickMoveOffset - halfBrickWidth;
-    final rightEdge = maxX + _brickMoveOffset + halfBrickWidth;
-
-    // Calculate how much room is left in the current direction.
-    double edgeFactor = 1.0;
-
-    if (_brickMoveDirection > 0) {
-      final remaining = rightSafeEdge - rightEdge;
-      edgeFactor = (remaining / brakingDistance).clamp(0.0, 1.0);
-    } else {
-      final remaining = leftEdge - leftSafeEdge;
-      edgeFactor = (remaining / brakingDistance).clamp(0.0, 1.0);
-    }
-
-    // Smooth target speed near the edges.
-    final targetSpeed =
-        maxSpeed * edgeFactor * warmupFactor * _brickMoveTurnBlend;
-
-    // 0.016 seconds is the reference 60 FPS frame.
-    final frameScale = (dt / 0.016).clamp(0.5, 1.5);
-
-    // Smooth acceleration and braking.
-    // Scale these values by frame time so the movement feels
-    // consistent across different frame rates.
-    final acceleration = 0.000030 * frameScale;
-    final deceleration = 0.000070 * frameScale;
-
-    if (_brickMoveVelocity < targetSpeed) {
-      _brickMoveVelocity = min(_brickMoveVelocity + acceleration, targetSpeed);
-    } else {
-      _brickMoveVelocity = max(_brickMoveVelocity - deceleration, targetSpeed);
-    }
-
-    // Never allow the formation to jump outside its movement range.
-    // Convert the movement velocity to elapsed-time based motion.
+    // Move at a constant, very gentle speed.
     var proposedOffset =
-        _brickMoveOffset +
-        _brickMoveVelocity * frameScale * _brickMoveDirection;
+        _brickMoveOffset + speed * (dt / 0.016) * _brickMoveDirection;
 
     proposedOffset = proposedOffset.clamp(-limit, limit);
 
-    // Hard safety against the physical screen edges.
+    // Keep the whole formation safely inside the screen.
     final proposedLeftEdge = minX + proposedOffset - halfBrickWidth;
     final proposedRightEdge = maxX + proposedOffset + halfBrickWidth;
 
     if (proposedRightEdge >= rightSafeEdge) {
       proposedOffset = rightSafeEdge - maxX - halfBrickWidth;
       _brickMoveDirection = -1.0;
-      // Reduce speed strongly at the turning point, then
-      // let the turn-blend ramp the movement back up smoothly.
-      _brickMoveVelocity *= 0.22;
-      _brickMoveTurnBlend = 0.0;
     } else if (proposedLeftEdge <= leftSafeEdge) {
       proposedOffset = leftSafeEdge - minX + halfBrickWidth;
       _brickMoveDirection = 1.0;
-      // Reduce speed strongly at the turning point, then
-      // let the turn-blend ramp the movement back up smoothly.
-      _brickMoveVelocity *= 0.22;
-      _brickMoveTurnBlend = 0.0;
     }
 
     _brickMoveOffset = proposedOffset.clamp(-limit, limit);
-
-    // Smooth the velocity after a direction reversal.
-    // This prevents an abrupt visual snap at the ends of the path.
-    if (_brickMoveTurnBlend < 1.0) {
-      // Gradually restore full movement after a direction change.
-      _brickMoveTurnBlend = min(1.0, _brickMoveTurnBlend + dt * 4.5);
-    }
-
-    // Keep the direction synchronized with the movement limits.
-    if (_brickMoveOffset >= limit) {
-      _brickMoveOffset = limit;
-      _brickMoveDirection = -1.0;
-      _brickMoveVelocity *= 0.35;
-      _brickMoveTurnBlend = 0.0;
-    } else if (_brickMoveOffset <= -limit) {
-      _brickMoveOffset = -limit;
-      _brickMoveDirection = 1.0;
-      _brickMoveVelocity *= 0.35;
-      _brickMoveTurnBlend = 0.0;
-    }
   }
 
   void _tick() {
@@ -653,7 +549,6 @@ class _GameScreenState extends State<GameScreen>
       _updateBalls(dt);
       _updatePowers(dt);
       _updateSparks(dt);
-      _updateExplosions(dt);
 
       if (_bricks.every((brick) => !brick.alive)) {
         shouldCompleteLevel = true;
@@ -842,15 +737,6 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  void _vibrate({bool strong = false}) {
-    if (!_vibrationEnabled) return;
-    if (strong) {
-      HapticFeedback.heavyImpact();
-    } else {
-      HapticFeedback.lightImpact();
-    }
-  }
-
   void _checkPaddle(Ball ball) {
     final paddleWidth = _powerStageActive
         ? .34
@@ -895,7 +781,6 @@ class _GameScreenState extends State<GameScreen>
       ball.vy = -_initialVerticalSpeed();
 
       SoundService.instance.playPaddle();
-      _vibrate();
       _impact(ball.x, paddleY);
       _addSparks(ball.x, paddleY, 8);
     }
@@ -941,7 +826,6 @@ class _GameScreenState extends State<GameScreen>
         ball.vy = -_initialVerticalSpeed();
 
         SoundService.instance.playPaddle();
-        _vibrate();
         _impact(ball.x, paddleY);
         _addSparks(ball.x, paddleY, 10);
 
@@ -1005,7 +889,6 @@ class _GameScreenState extends State<GameScreen>
     if (brick.hp <= 0) {
       brick.alive = false;
       SoundService.instance.playBrick();
-      _vibrate(strong: true);
 
       if (brick.type == BrickType.explosive) {
         _explodeBrick(brick);
@@ -1091,12 +974,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _explodeBrick(Brick center) {
-    // Main explosion.
-    _explosions.add(_ExplosionEffect(x: center.x, y: center.y));
-
-    _addSparks(center.x, center.y, 60);
-
-    // Damage nearby bricks and create secondary impacts.
+    // Explosive brick mechanic: damage nearby bricks without visual effects.
     for (final brick in _bricks) {
       if (!brick.alive || identical(brick, center)) {
         continue;
@@ -1107,11 +985,7 @@ class _GameScreenState extends State<GameScreen>
       final distance = sqrt(dx * dx + dy * dy);
 
       if (distance < .18) {
-        brick.flashing = true;
         brick.hp--;
-
-        // Strong impact sparks on affected bricks.
-        _addSparks(brick.x, brick.y, 14);
 
         if (brick.hp <= 0) {
           brick.alive = false;
@@ -1120,29 +994,7 @@ class _GameScreenState extends State<GameScreen>
           if (brick.type == BrickType.bonus) {
             _score += 50;
           }
-
-          // Secondary burst when an explosive brick is destroyed
-          // by another explosion.
-          if (brick.type == BrickType.explosive) {
-            _explosions.add(_ExplosionEffect(x: brick.x, y: brick.y));
-            _addSparks(brick.x, brick.y, 28);
-          }
         }
-
-        Future<void>.delayed(const Duration(milliseconds: 120), () {
-          if (mounted) {
-            brick.flashing = false;
-          }
-        });
-      }
-    }
-  }
-
-  void _updateExplosions(double dt) {
-    for (final explosion in List<_ExplosionEffect>.from(_explosions)) {
-      explosion.life += dt;
-      if (explosion.life >= _ExplosionEffect.maxLife) {
-        _explosions.remove(explosion);
       }
     }
   }
@@ -2310,7 +2162,6 @@ class _GameScreenState extends State<GameScreen>
                     bricks: _bricks,
                     powers: _powers,
                     sparks: _sparks,
-                    explosions: _explosions,
                     paused: _paused,
                     gameOver: _gameOver,
                     levelClear: _levelClear,
@@ -2388,7 +2239,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.bricks,
     required this.powers,
     required this.sparks,
-    required this.explosions,
     required this.paused,
     required this.gameOver,
     required this.levelClear,
@@ -2425,7 +2275,6 @@ class _NeonGamePainter extends CustomPainter {
   final List<Brick> bricks;
   final List<FallingPower> powers;
   final List<Spark> sparks;
-  final List<_ExplosionEffect> explosions;
 
   final bool paused;
   final bool gameOver;
@@ -2441,33 +2290,6 @@ class _NeonGamePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Short visual camera shake while an explosion is active.
-    double shakeX = 0.0;
-    double shakeY = 0.0;
-
-    if (explosions.isNotEmpty) {
-      double strongest = 0.0;
-
-      for (final explosion in explosions) {
-        final progress = (explosion.life / _ExplosionEffect.maxLife).clamp(
-          0.0,
-          1.0,
-        );
-        final strength = (1.0 - progress) * 4.0;
-        if (strength > strongest) {
-          strongest = strength;
-        }
-      }
-
-      if (strongest > 0.0) {
-        shakeX = sin(explosions.first.life * 95.0) * strongest;
-        shakeY = cos(explosions.first.life * 117.0) * strongest;
-      }
-    }
-
-    canvas.save();
-    canvas.translate(shakeX, shakeY);
-
     _background(canvas, size);
     _drawHud(canvas, size);
     _drawBricks(canvas, size);
@@ -2475,170 +2297,12 @@ class _NeonGamePainter extends CustomPainter {
     _drawPaddle(canvas, size);
     _drawBalls(canvas, size);
     _drawSparks(canvas, size);
-    _drawExplosionEffects(canvas, size);
 
     if (paused) {
       _drawCenterNeonPause(canvas, size);
     }
 
     canvas.restore();
-  }
-
-  void _drawExplosionEffects(Canvas canvas, Size size) {
-    for (final explosion in explosions) {
-      final progress = (explosion.life / _ExplosionEffect.maxLife).clamp(
-        0.0,
-        1.0,
-      );
-      final alpha = (1.0 - progress).clamp(0.0, 1.0);
-
-      final center = Offset(
-        explosion.x * size.width,
-        explosion.y * size.height,
-      );
-
-      // Main expanding radius.
-      final radius = 8.0 + progress * 42.0;
-
-      // ----------------------------------------------------------
-      // OUTER NEON AURA
-      // ----------------------------------------------------------
-      canvas.drawCircle(
-        center,
-        radius + 12,
-        Paint()
-          ..color = NeonColors.orange.withValues(alpha: alpha * .14)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
-      );
-
-      // ----------------------------------------------------------
-      // OUTER SHOCKWAVE
-      // ----------------------------------------------------------
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4.0 * (1.0 - progress * .65)
-          ..color = NeonColors.orange.withValues(alpha: alpha * .9)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-      );
-
-      // ----------------------------------------------------------
-      // SECONDARY SHOCKWAVE
-      // ----------------------------------------------------------
-      final innerWaveRadius = radius * .68;
-
-      canvas.drawCircle(
-        center,
-        innerWaveRadius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0 * (1.0 - progress)
-          ..color = NeonColors.yellow.withValues(alpha: alpha * .85),
-      );
-
-      // ----------------------------------------------------------
-      // EXPLOSION RAYS
-      // ----------------------------------------------------------
-      final rayPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 2.2
-        ..color = Colors.orangeAccent.withValues(alpha: alpha * .95)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-      for (int i = 0; i < 8; i++) {
-        final angle = i * pi / 4.0 + pi / 8.0;
-
-        final inner = radius * .38;
-        final outer = radius * (0.78 + (i.isEven ? .16 : .06));
-
-        final startPoint = Offset(
-          center.dx + cos(angle) * inner,
-          center.dy + sin(angle) * inner,
-        );
-
-        final endPoint = Offset(
-          center.dx + cos(angle) * outer,
-          center.dy + sin(angle) * outer,
-        );
-
-        canvas.drawLine(startPoint, endPoint, rayPaint);
-      }
-
-      // Crisp white ray layer.
-      final whiteRayPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 1.0
-        ..color = Colors.white.withValues(alpha: alpha * .8);
-
-      for (int i = 0; i < 8; i++) {
-        final angle = i * pi / 4.0 + pi / 8.0;
-
-        final inner = radius * .48;
-        final outer = radius * (0.72 + (i.isEven ? .13 : .04));
-
-        canvas.drawLine(
-          Offset(
-            center.dx + cos(angle) * inner,
-            center.dy + sin(angle) * inner,
-          ),
-          Offset(
-            center.dx + cos(angle) * outer,
-            center.dy + sin(angle) * outer,
-          ),
-          whiteRayPaint,
-        );
-      }
-
-      // ----------------------------------------------------------
-      // HOT CORE
-      // ----------------------------------------------------------
-      final coreRadius = 12.0 * (1.0 - progress * .35);
-
-      canvas.drawCircle(
-        center,
-        coreRadius + 7,
-        Paint()
-          ..color = NeonColors.orange.withValues(alpha: alpha * .30)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius,
-        Paint()..color = NeonColors.orange.withValues(alpha: alpha * .95),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius * .58,
-        Paint()..color = NeonColors.yellow.withValues(alpha: alpha),
-      );
-
-      canvas.drawCircle(
-        center,
-        coreRadius * .28,
-        Paint()..color = Colors.white.withValues(alpha: alpha),
-      );
-
-      // ----------------------------------------------------------
-      // INITIAL WHITE FLASH
-      // ----------------------------------------------------------
-      if (progress < .30) {
-        final flashAlpha = ((.30 - progress) / .30).clamp(0.0, 1.0);
-
-        canvas.drawCircle(
-          center,
-          18.0 + progress * 20.0,
-          Paint()
-            ..color = Colors.white.withValues(alpha: flashAlpha * .30)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
-        );
-      }
-    }
   }
 
   void _background(Canvas canvas, Size size) {
@@ -3372,7 +3036,7 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final center = Offset(paddle * size.width, size.height * .905);
+    final center = Offset(paddle * size.width, size.height * .890);
 
     final width = powerStageActive
         ? size.width * .70
@@ -3482,8 +3146,8 @@ class _NeonGamePainter extends CustomPainter {
       final sideHeight = size.height * .030;
 
       // Bonus paddles remain below the brick field at different heights.
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .90);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .84);
+      final leftCenter = Offset(leftPaddleX * size.width, size.height * .780);
+      final rightCenter = Offset(rightPaddleX * size.width, size.height * .780);
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
