@@ -50,14 +50,7 @@ class SaveService {
   // ----------------------------------------------------------
   // BACKGROUND THEME
   // ----------------------------------------------------------
-
-  int get backgroundTheme => (_prefs.getInt('background_theme') ?? 0).clamp(0, 1);
-
-  Future<void> setBackgroundTheme(int value) async {
-    await _prefs.setInt('background_theme', value.clamp(0, 1));
-  }
-
-  int bestScoreForLevel(int level) {
+int bestScoreForLevel(int level) {
     return _prefs.getInt('level_score_$level') ?? 0;
   }
 

@@ -161,6 +161,7 @@ class _GameScreenState extends State<GameScreen>
   double _rightPaddleDirection = -1;
 
   Size _lastSize = Size.zero;
+  DateTime? _lastTickTime;
 
   @override
   void initState() {
@@ -196,6 +197,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _createLevel() {
+    _lastTickTime = null;
     _balls.clear();
     _bricks.clear();
     _powers.clear();
@@ -483,16 +485,21 @@ class _GameScreenState extends State<GameScreen>
   }
 
   double _speedMultiplier() {
-    // Gradual speed progression across all 100 levels.
-    // Level 1 = 1.00x, Level 100 = about 1.35x.
-    final levelSpeed =
-        (1.0 + (min(widget.level, 100) - 1) * 0.0035).clamp(1.0, 1.35);
+    // Fixed arcade speed by level blocks.
+    // Speed never changes during a level.
+    // It only increases when entering a new level block.
+    final level = min(widget.level, 100);
 
-    if (_powerStageActive) {
-      return levelSpeed * 1.18;
-    }
-
-    return levelSpeed;
+    if (level <= 10) return 1.00;
+    if (level <= 20) return 1.04;
+    if (level <= 30) return 1.08;
+    if (level <= 40) return 1.12;
+    if (level <= 50) return 1.16;
+    if (level <= 60) return 1.20;
+    if (level <= 70) return 1.24;
+    if (level <= 80) return 1.28;
+    if (level <= 90) return 1.32;
+    return 1.36;
   }
 
   void _tick() {
@@ -500,7 +507,12 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
-    final dt = .016;
+    final now = DateTime.now();
+    final dt = _lastTickTime == null
+        ? 1.0 / 60.0
+        : ((now.difference(_lastTickTime!).inMicroseconds) / 1000000.0)
+            .clamp(1.0 / 120.0, 1.0 / 30.0);
+    _lastTickTime = now;
     var shouldCompleteLevel = false;
 
     setState(() {
@@ -1245,6 +1257,7 @@ class _GameScreenState extends State<GameScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+              const NeonStaticBackground(),
                 Icon(Icons.lock_rounded, color: NeonColors.yellow, size: 46),
                 const SizedBox(height: 10),
                 const Text(
@@ -1540,6 +1553,7 @@ class _GameScreenState extends State<GameScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+              const NeonStaticBackground(),
                         Icon(
                           isWin
                               ? Icons.emoji_events_rounded
@@ -1600,6 +1614,7 @@ class _GameScreenState extends State<GameScreen>
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
+              const NeonStaticBackground(),
                               _resultStat('LEVEL', '${widget.level}'),
                               _resultDivider(),
                               _resultStat('SCORE', '$_score'),
@@ -1761,6 +1776,7 @@ class _GameScreenState extends State<GameScreen>
           ),
           child: Row(
             children: [
+              const NeonStaticBackground(),
               Container(
                 width: 54,
                 height: 54,
@@ -1790,6 +1806,7 @@ class _GameScreenState extends State<GameScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+              NeonStaticBackground(),
                     Text(
                       'DOUBLE REWARD',
                       style: TextStyle(
@@ -1861,6 +1878,7 @@ class _GameScreenState extends State<GameScreen>
           ),
           child: Row(
             children: [
+              const NeonStaticBackground(),
               Container(
                 width: 54,
                 height: 54,
@@ -1890,6 +1908,7 @@ class _GameScreenState extends State<GameScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+              NeonStaticBackground(),
                     Text(
                       'EXTRA LIFE',
                       style: TextStyle(
@@ -1936,6 +1955,7 @@ class _GameScreenState extends State<GameScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+              const NeonStaticBackground(),
         Text(
           title,
           style: const TextStyle(
@@ -2096,6 +2116,7 @@ class _GameScreenState extends State<GameScreen>
             child: Stack(
               fit: StackFit.expand,
               children: [
+              const NeonStaticBackground(),
                 CustomPaint(
                   painter: _NeonGamePainter(
                     level: widget.level,
@@ -2127,7 +2148,6 @@ class _GameScreenState extends State<GameScreen>
                     doublePaddle: _doublePaddle,
                     leftPaddleX: _leftPaddleX,
                     rightPaddleX: _rightPaddleX,
-                    backgroundTheme: widget.save.backgroundTheme,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -2223,6 +2243,7 @@ class _GameScreenState extends State<GameScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const NeonStaticBackground(),
               Container(
                 width: 4,
                 height: 14,
@@ -2284,6 +2305,7 @@ class _GameScreenState extends State<GameScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+              const NeonStaticBackground(),
           Text(
             'PAUSED',
             style: TextStyle(
@@ -2345,6 +2367,106 @@ class _GameScreenState extends State<GameScreen>
   }
 }
 
+
+class NeonStaticBackground extends StatelessWidget {
+  const NeonStaticBackground({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: _NeonStaticBackgroundPainter(),
+        ),
+      ),
+    );
+  }
+}
+
+class _NeonStaticBackgroundPainter extends CustomPainter {
+  const _NeonStaticBackgroundPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+
+    final bg = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFF03000D),
+          Color(0xFF080021),
+          Color(0xFF020611),
+        ],
+      ).createShader(rect);
+
+    canvas.drawRect(rect, bg);
+
+    final glow = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment(0, -0.2),
+        radius: 0.9,
+        colors: [
+          Color(0x403B00FF),
+          Color(0x181A7CFF),
+          Color(0x00000000),
+        ],
+      ).createShader(rect);
+
+    canvas.drawRect(rect, glow);
+
+    final grid = Paint()
+      ..color = const Color(0x143C8DFF)
+      ..strokeWidth = 1;
+
+    const spacing = 42.0;
+
+    for (double x = 0; x <= size.width; x += spacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        grid,
+      );
+    }
+
+    for (double y = 0; y <= size.height; y += spacing) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        grid,
+      );
+    }
+
+    // Deep neon background.
+    // Static neon horizon.
+    final horizonY = size.height * 0.42;
+
+    final horizonGlow = Paint()
+      ..color = const Color(0x183C8DFF)
+      ..strokeWidth = 8;
+
+    canvas.drawLine(
+      Offset(0, horizonY),
+      Offset(size.width, horizonY),
+      horizonGlow,
+    );
+
+    final horizon = Paint()
+      ..color = const Color(0x663C8DFF)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(
+      Offset(0, horizonY),
+      Offset(size.width, horizonY),
+      horizon,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _NeonGamePainter extends CustomPainter {
   _NeonGamePainter({
     required this.level,
@@ -2376,7 +2498,6 @@ class _NeonGamePainter extends CustomPainter {
     required this.doublePaddle,
     required this.leftPaddleX,
     required this.rightPaddleX,
-    required this.backgroundTheme,
   });
 
   final int level;
@@ -2413,11 +2534,9 @@ class _NeonGamePainter extends CustomPainter {
   final bool doublePaddle;
   final double leftPaddleX;
   final double rightPaddleX;
-  final int backgroundTheme;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _background(canvas, size);
     _drawHud(canvas, size);
     _drawBricks(canvas, size);
     _drawPowers(canvas, size);
@@ -2426,20 +2545,6 @@ class _NeonGamePainter extends CustomPainter {
     _drawSparks(canvas, size);
   }
 
-  void _background(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final colors = BackgroundThemes.colorsFor(backgroundTheme);
-
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: colors,
-        ).createShader(rect),
-    );
-  }
 
   void _drawStageEvent(Canvas canvas, Size size) {
     if (!stageEventActive) {
@@ -2584,24 +2689,7 @@ class _NeonGamePainter extends CustomPainter {
     _drawStageEvent(canvas, size);
     _drawPowerStage(canvas, size);
 
-    if (combo >= 2 && !paused) {
-      final double comboSize = combo >= 10
-          ? 21
-          : combo >= 5
-          ? 19.5
-          : 18;
-
-      final comboHot = combo >= 10 || powerStage >= 70;
-
-      _centerText(
-        canvas,
-        'COMBO x$combo',
-        Offset(size.width / 2, 37),
-        comboSize,
-        comboHot ? NeonColors.cyan : NeonColors.yellow,
-      );
-    }
-
+    // Main toolbar.
     const double top = 30;
 
     final hudRect = RRect.fromRectAndRadius(
@@ -2622,28 +2710,58 @@ class _NeonGamePainter extends CustomPainter {
         ..color = NeonColors.cyan.withValues(alpha: .20),
     );
 
-    _text(canvas, 'LEVEL $level', const Offset(20, top), 12, Colors.white);
-
-    _text(canvas, 'SCORE $score', const Offset(20, 51), 11, NeonColors.cyan);
+    // Level and score.
+    _text(
+      canvas,
+      'LEVEL $level',
+      const Offset(20, top),
+      12,
+      Colors.white,
+    );
 
     _text(
       canvas,
-      '♥ $lives',
-      Offset(size.width - 92, top),
-      13,
-      NeonColors.pink,
+      'SCORE $score',
+      const Offset(20, 51),
+      11,
+      NeonColors.cyan,
     );
 
-    if (extraLives > 0) {
-      _text(
-        canvas,
-        '♥ $extraLives',
-        Offset(size.width - 54, top),
-        13,
-        NeonColors.yellow,
-      );
-    }
+    // Lives centered inside the toolbar.
+    final livesPainter = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: '♥ $lives',
+            style: const TextStyle(
+              color: NeonColors.pink,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (extraLives > 0)
+            TextSpan(
+              text: '   ♥ $extraLives',
+              style: const TextStyle(
+                color: NeonColors.yellow,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
 
+    livesPainter.paint(
+      canvas,
+      Offset(
+        (size.width - livesPainter.width) / 2,
+        top,
+      ),
+    );
+
+    // Pause button inside the toolbar.
     if (paused) {
       _iconButton(
         canvas,
@@ -2652,11 +2770,34 @@ class _NeonGamePainter extends CustomPainter {
         large: true,
       );
     } else {
-      _iconButton(canvas, Offset(size.width - 30, 45), Icons.pause);
+      _iconButton(
+        canvas,
+        Offset(size.width - 30, 37),
+        Icons.pause,
+      );
+    }
+
+    // Combo below the toolbar, above the Power Stage.
+    if (combo >= 2 && !paused) {
+      final comboHot = combo >= 10 || powerStage >= 70;
+
+      _centerText(
+        canvas,
+        'COMBO x$combo',
+        Offset(size.width / 2, 70),
+        15,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
+      );
     }
 
     if (laser) {
-      _text(canvas, 'LASER', Offset(size.width - 82, 63), 8, NeonColors.orange);
+      _text(
+        canvas,
+        'LASER',
+        Offset(size.width - 82, 63),
+        8,
+        NeonColors.orange,
+      );
     }
   }
 
