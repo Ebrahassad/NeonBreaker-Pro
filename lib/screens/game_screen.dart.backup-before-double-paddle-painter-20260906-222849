@@ -1,0 +1,3073 @@
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../core/theme.dart';
+import '../core/stages/stage_config.dart';
+import '../core/stages/stage_pattern.dart';
+import '../core/stages/stage_reward.dart';
+import '../services/ad_service.dart';
+import '../services/save_service.dart';
+import 'home_screen.dart';
+
+enum BrickType { normal, explosive, steel, bonus }
+
+enum PowerType { multiBall, fireBall, widePaddle, shield, laser, doublePaddle }
+
+class Ball {
+  Ball({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    this.fire = false,
+  });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  bool fire;
+  bool alive = true;
+
+  final List<Offset> trail = [];
+}
+
+class Brick {
+  Brick({required this.x, required this.y, required this.type, this.hp = 1});
+
+  final double x;
+  final double y;
+  final BrickType type;
+  int hp;
+  bool alive = true;
+  bool flashing = false;
+}
+
+class FallingPower {
+  FallingPower({required this.x, required this.y, required this.type});
+
+  double x;
+  double y;
+  final PowerType type;
+}
+
+class Spark {
+  Spark({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.life,
+    required this.maxLife,
+  });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  double life;
+  final double maxLife;
+}
+
+class GameScreen extends StatefulWidget {
+  const GameScreen({super.key, required this.save, this.level = 1});
+
+  final SaveService save;
+  final int level;
+
+  @override
+  State<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late AnimationController _controller;
+
+  final Random _random = Random();
+
+  late final StageConfig _stageConfig;
+
+  final List<Ball> _balls = [];
+  final List<Brick> _bricks = [];
+  final List<FallingPower> _powers = [];
+  final List<Spark> _sparks = [];
+
+  double _paddle = .5;
+
+  int _score = 0;
+  int _lives = 3;
+  int _combo = 0;
+  int _bestCombo = 0;
+  int _earnedStars = 0;
+  int _bonusScore = 0;
+
+  int _stageHits = 0;
+  bool _stageEventActive = false;
+  double _stageEventTimer = 0;
+
+  // POWER STAGE
+  double _powerStage = 0;
+  bool _powerStageActive = false;
+  double _powerStageTimer = 0;
+  double _powerStageAnnouncementTimer = 0;
+  double _stageElapsed = 0;
+
+  bool _paused = false;
+  bool _gameOver = false;
+  bool _levelClear = false;
+
+  bool _shield = false;
+  bool _widePaddle = false;
+  bool _laser = false;
+  bool _doublePaddle = false;
+
+  bool _continueUsed = false;
+  bool _doubleBonusUsed = false;
+  bool _stageMechanicActive = false;
+  double _stageMechanicTimer = 0;
+
+  double _wideTimer = 0;
+  double _shieldTimer = 0;
+  double _laserTimer = 0;
+  double _doublePaddleTimer = 0;
+
+  double _leftPaddleX = .18;
+  double _rightPaddleX = .82;
+  double _leftPaddleDirection = 1;
+  double _rightPaddleDirection = -1;
+
+  Size _lastSize = Size.zero;
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+
+    _stageConfig = stageConfigFor(widget.level);
+
+    _enterFullscreen();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _enterFullscreen();
+      }
+    });
+
+    _createLevel();
+
+    _controller =
+        AnimationController(vsync: this, duration: const Duration(days: 1))
+          ..addListener(_tick)
+          ..repeat();
+  }
+
+  Future<void> _enterFullscreen() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
+
+  void _createLevel() {
+    _balls.clear();
+    _bricks.clear();
+    _powers.clear();
+    _sparks.clear();
+
+    _score = 0;
+    _lives = 3;
+    _combo = 0;
+    _bestCombo = 0;
+    _earnedStars = 0;
+    _bonusScore = 0;
+    _bestCombo = 0;
+
+    _stageHits = 0;
+    _stageElapsed = 0;
+    _stageEventActive = false;
+    _stageEventTimer = 0;
+
+    _powerStage = 0;
+    _powerStageActive = false;
+    _powerStageTimer = 0;
+    _powerStageAnnouncementTimer = 0;
+
+    _paused = false;
+    _gameOver = false;
+    _levelClear = false;
+
+    _shield = false;
+    _widePaddle = false;
+    _laser = false;
+    _doublePaddle = false;
+
+    _continueUsed = false;
+    _doubleBonusUsed = false;
+
+    _wideTimer = 0;
+    _shieldTimer = 0;
+    _laserTimer = 0;
+    _doublePaddleTimer = 0;
+    _leftPaddleX = .18;
+    _rightPaddleX = .82;
+    _leftPaddleDirection = 1;
+    _rightPaddleDirection = -1;
+
+    _paddle = .5;
+
+    _balls.add(
+      Ball(
+        x: .5,
+        y: .72,
+        vx: _initialHorizontalSpeed(),
+        vy: -_initialVerticalSpeed(),
+      ),
+    );
+
+    final rows = min(10, 5 + widget.level ~/ 3);
+    const columns = 8;
+    final pattern = patternForLevel(widget.level);
+
+    bool shouldSpawnBrick(int row, int col) {
+      final center = 3.5;
+      final variant = widget.level % 4;
+      final distance = (col - center).abs();
+
+      switch (pattern) {
+        case StagePattern.classic:
+          if (variant == 1) {
+            return row < rows - 1 || col.isEven;
+          }
+          if (variant == 2) {
+            return row != rows ~/ 2 || col % 3 != 0;
+          }
+          if (variant == 3) {
+            return row == 0 ||
+                row == rows - 1 ||
+                col == 0 ||
+                col == columns - 1 ||
+                (row + col) % 3 == 0;
+          }
+          return true;
+
+        case StagePattern.diamond:
+          final diamondRow = min(7, rows - 1);
+          final base =
+              row >= distance - .5 && row <= diamondRow - distance + .5;
+          if (variant == 1) {
+            return base && !(row == 3 && col == 3);
+          }
+          if (variant == 2) {
+            return base && (row + col) % 3 != 1;
+          }
+          if (variant == 3) {
+            return base || (row == 0 && col >= 2 && col <= 5);
+          }
+          return base;
+
+        case StagePattern.fortress:
+          final wall =
+              row == 0 || row == rows - 1 || col == 0 || col == columns - 1;
+          if (variant == 1) {
+            return wall || (row == 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 2) {
+            return wall || (row == rows ~/ 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 3) {
+            return wall ||
+                (row == 2 && col >= 2 && col <= 5) ||
+                (row == rows - 3 && col >= 2 && col <= 5);
+          }
+          return wall || (row == 2 && col >= 2 && col <= 5);
+
+        case StagePattern.checker:
+          if (variant == 1) {
+            return (row + col) % 2 == 0 && row != rows - 1;
+          }
+          if (variant == 2) {
+            return (row + col) % 2 == 0 || row == rows ~/ 2;
+          }
+          if (variant == 3) {
+            return (row + col) % 2 == 0 && col != 3 && col != 4;
+          }
+          return (row + col) % 2 == 0;
+
+        case StagePattern.pyramid:
+          final width = min(columns, 2 + row * 2);
+          final left = (columns - width) ~/ 2;
+          final inside = col >= left && col < left + width;
+          if (variant == 1) {
+            return inside && !(row == rows - 1 && col > 1 && col < 6);
+          }
+          if (variant == 2) {
+            return inside && (row + col) % 3 != 1;
+          }
+          if (variant == 3) {
+            return inside || (row == 0 && col >= 3 && col <= 4);
+          }
+          return inside;
+
+        case StagePattern.cross:
+          final vertical = col == columns ~/ 2 || col == columns ~/ 2 - 1;
+          final horizontal = row == rows ~/ 2;
+          if (variant == 1) {
+            return vertical || horizontal || row == 1;
+          }
+          if (variant == 2) {
+            return vertical ||
+                horizontal ||
+                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 3) {
+            return vertical || horizontal || row == 0 || row == rows - 1;
+          }
+          return vertical || horizontal;
+
+        case StagePattern.tunnel:
+          final outer =
+              row < 2 || row >= rows - 2 || col == 0 || col == columns - 1;
+          if (variant == 1) {
+            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 2) {
+            return outer || col == 3 || col == 4;
+          }
+          if (variant == 3) {
+            return outer || (row == rows ~/ 2 && col >= 2 && col <= 5);
+          }
+          return outer;
+
+        case StagePattern.boss:
+          final frame =
+              row == 0 ||
+              row == 1 ||
+              row == rows ~/ 2 ||
+              col == 0 ||
+              col == columns - 1;
+          if (variant == 1) {
+            return frame || (row == 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 2) {
+            return frame ||
+                (row == rows ~/ 2 - 2 && col >= 2 && col <= 5) ||
+                (row == rows ~/ 2 + 2 && col >= 2 && col <= 5);
+          }
+          if (variant == 3) {
+            return frame ||
+                (row == 2 && (col == 2 || col == 5)) ||
+                (row == rows - 3 && (col == 2 || col == 5));
+          }
+          return frame;
+      }
+    }
+
+    for (int row = 0; row < rows; row++) {
+      for (int col = 0; col < columns; col++) {
+        if (!shouldSpawnBrick(row, col)) {
+          continue;
+        }
+
+        final roll = _random.nextDouble();
+        BrickType type;
+
+        if (roll < _explosiveChance()) {
+          type = BrickType.explosive;
+        } else if (roll < _explosiveChance() + .08) {
+          type = BrickType.steel;
+        } else if (roll < _explosiveChance() + .18) {
+          type = BrickType.bonus;
+        } else {
+          type = BrickType.normal;
+        }
+
+        // Boss stages contain tougher center blocks.
+        final isBossCore =
+            pattern == StagePattern.boss &&
+            row >= 1 &&
+            row <= 2 &&
+            col >= 2 &&
+            col <= 5;
+
+        if (isBossCore) {
+          type = BrickType.steel;
+        }
+
+        final hp = type == BrickType.steel ? 2 + widget.level ~/ 5 : 1;
+
+        _bricks.add(
+          Brick(x: .065 + col * .125, y: .105 + row * .055, type: type, hp: hp),
+        );
+      }
+    }
+  }
+
+  double _explosiveChance() {
+    return min(.18, .07 + widget.level * .006);
+  }
+
+  // Balanced arcade speed:
+  // a little snappier than before, with a gentle per-level ramp-up.
+  double _initialHorizontalSpeed() {
+    return .52;
+  }
+
+  double _initialVerticalSpeed() {
+    return .82;
+  }
+
+  double _speedMultiplier() {
+    final levelSpeed = (1.0 + min(widget.level, 25) * 0.008).clamp(1.0, 1.2);
+
+    if (_powerStageActive) {
+      return levelSpeed * 1.35;
+    }
+
+    return levelSpeed;
+  }
+
+  void _tick() {
+    if (!mounted || _paused || _gameOver || _levelClear) {
+      return;
+    }
+
+    final dt = .016;
+
+    setState(() {
+      _stageElapsed += dt;
+      _updateTimers(dt);
+      _updateBalls(dt);
+      _updatePowers(dt);
+      _updateSparks(dt);
+
+      if (_bricks.every((brick) => !brick.alive)) {
+        _completeLevel();
+      }
+    });
+  }
+
+  void _updateTimers(double dt) {
+    if (_powerStageAnnouncementTimer > 0) {
+      _powerStageAnnouncementTimer -= dt;
+
+      if (_powerStageAnnouncementTimer < 0) {
+        _powerStageAnnouncementTimer = 0;
+      }
+    }
+
+    if (_powerStageActive) {
+      _powerStageTimer -= dt;
+
+      if (_powerStageTimer <= 0) {
+        _powerStageTimer = 0;
+        _powerStageActive = false;
+        _powerStage = 0;
+      }
+    }
+
+    if (_stageMechanicActive) {
+      _stageMechanicTimer -= dt;
+
+      if (_stageMechanicTimer <= 0) {
+        _stageMechanicTimer = 0;
+        _stageMechanicActive = false;
+      }
+    }
+
+    if (_stageEventActive) {
+      _stageEventTimer -= dt;
+
+      if (_stageEventTimer <= 0) {
+        _stageEventActive = false;
+        _stageEventTimer = 0;
+      }
+    }
+
+    if (_widePaddle) {
+      _wideTimer -= dt;
+
+      if (_wideTimer <= 0) {
+        _widePaddle = false;
+      }
+    }
+
+    if (_shield) {
+      _shieldTimer -= dt;
+
+      if (_shieldTimer <= 0) {
+        _shield = false;
+      }
+    }
+
+    if (_laser) {
+      _laserTimer -= dt;
+
+      if (_laserTimer <= 0) {
+        _laser = false;
+      }
+    }
+
+    if (_doublePaddle) {
+      _doublePaddleTimer -= dt;
+
+      if (_doublePaddleTimer <= 0) {
+        _doublePaddle = false;
+      }
+    }
+  }
+
+  void _updateDoublePaddles(double dt) {
+    if (!_doublePaddle) {
+      return;
+    }
+
+    const speed = .22;
+    const halfWidth = .09;
+    const minX = halfWidth;
+    const maxX = 1.0 - halfWidth;
+
+    _leftPaddleX += _leftPaddleDirection * speed * dt;
+    _rightPaddleX += _rightPaddleDirection * speed * dt;
+
+    if (_leftPaddleX <= minX) {
+      _leftPaddleX = minX;
+      _leftPaddleDirection = 1;
+    } else if (_leftPaddleX >= maxX) {
+      _leftPaddleX = maxX;
+      _leftPaddleDirection = -1;
+    }
+
+    if (_rightPaddleX <= minX) {
+      _rightPaddleX = minX;
+      _rightPaddleDirection = 1;
+    } else if (_rightPaddleX >= maxX) {
+      _rightPaddleX = maxX;
+      _rightPaddleDirection = -1;
+    }
+  }
+
+  void _updateBalls(double dt) {
+    _updateDoublePaddles(dt);
+
+    final speed = _speedMultiplier();
+
+    for (final ball in List<Ball>.from(_balls)) {
+      if (!ball.alive) {
+        continue;
+      }
+
+      ball.trail.insert(0, Offset(ball.x, ball.y));
+
+      if (ball.trail.length > 10) {
+        ball.trail.removeLast();
+      }
+
+      ball.x += ball.vx * dt * speed;
+      ball.y += ball.vy * dt * speed;
+
+      const radius = .022;
+
+      if (ball.x <= radius) {
+        ball.x = radius;
+        ball.vx = ball.vx.abs();
+        _impact(ball.x, ball.y);
+      }
+
+      if (ball.x >= 1 - radius) {
+        ball.x = 1 - radius;
+        ball.vx = -ball.vx.abs();
+        _impact(ball.x, ball.y);
+      }
+
+      if (ball.y <= .055 + radius) {
+        ball.y = .055 + radius;
+        ball.vy = ball.vy.abs();
+        _impact(ball.x, ball.y);
+      }
+
+      _checkPaddle(ball);
+      _checkDoublePaddles(ball);
+
+      _checkBricks(ball);
+
+      if (ball.y > 1.06) {
+        if (_powerStageActive) {
+          // Power Stage barrier catches the ball instead of losing a life.
+          ball.y = .865;
+          ball.vy = -ball.vy.abs();
+
+          final relative = ((ball.x - _paddle) / .5).clamp(-1.0, 1.0);
+          ball.vx = relative * .48;
+
+          _addSparks(ball.x, .87, 12);
+        } else {
+          ball.alive = false;
+        }
+      }
+    }
+
+    _balls.removeWhere((ball) => !ball.alive);
+
+    if (_balls.isEmpty) {
+      _loseLife();
+    }
+  }
+
+  void _checkPaddle(Ball ball) {
+    final paddleWidth = _powerStageActive
+        ? .88
+        : _widePaddle
+        ? .31
+        : .23;
+
+    // نفس موضع المضرب المرسوم على الشاشة.
+    const paddleY = .905;
+    const paddleHalfHeight = .018;
+    const ballRadius = .026;
+
+    final left = _paddle - paddleWidth / 2;
+    final right = _paddle + paddleWidth / 2;
+
+    final horizontalHit =
+        ball.x + ballRadius >= left && ball.x - ballRadius <= right;
+
+    // نتحقق من سطح المضرب نفسه، وليس منطقة بعيدة فوقه.
+    final verticalHit =
+        ball.y + ballRadius >= paddleY - paddleHalfHeight &&
+        ball.y - ballRadius <= paddleY + paddleHalfHeight;
+
+    if (ball.vy > 0 && horizontalHit && verticalHit) {
+      // ضع الكرة ملاصقة مباشرة للسطح العلوي للمضرب.
+      ball.y = paddleY - ballRadius - .018;
+
+      final relative = ((ball.x - _paddle) / (paddleWidth / 2)).clamp(
+        -1.0,
+        1.0,
+      );
+
+      // ارتداد متوسط وثابت.
+      const maxHorizontal = .42;
+      ball.vx = relative * maxHorizontal;
+
+      // لا تسمح بمسار شبه عمودي.
+      if (ball.vx.abs() < .12) {
+        ball.vx = ball.vx >= 0 ? .12 : -.12;
+      }
+
+      ball.vy = -_initialVerticalSpeed();
+
+      _impact(ball.x, paddleY);
+      _addSparks(ball.x, paddleY, 8);
+    }
+  }
+
+  void _checkDoublePaddles(Ball ball) {
+    if (!_doublePaddle) {
+      return;
+    }
+
+    const ballRadius = .026;
+    const paddleHalfWidth = .09;
+    const paddleHalfHeight = .015;
+
+    const leftY = .875;
+    const rightY = .845;
+
+    bool hitPaddle(double paddleX, double paddleY) {
+      final left = paddleX - paddleHalfWidth;
+      final right = paddleX + paddleHalfWidth;
+
+      final horizontalHit =
+          ball.x + ballRadius >= left && ball.x - ballRadius <= right;
+
+      final verticalHit =
+          ball.y + ballRadius >= paddleY - paddleHalfHeight &&
+          ball.y - ballRadius <= paddleY + paddleHalfHeight;
+
+      if (ball.vy > 0 && horizontalHit && verticalHit) {
+        ball.y = paddleY - ballRadius - paddleHalfHeight;
+
+        final relative = ((ball.x - paddleX) / paddleHalfWidth).clamp(
+          -1.0,
+          1.0,
+        );
+
+        ball.vx = relative * .42;
+
+        if (ball.vx.abs() < .12) {
+          ball.vx = ball.vx >= 0 ? .12 : -.12;
+        }
+
+        ball.vy = -_initialVerticalSpeed();
+
+        _impact(ball.x, paddleY);
+        _addSparks(ball.x, paddleY, 10);
+
+        return true;
+      }
+
+      return false;
+    }
+
+    if (hitPaddle(_leftPaddleX, leftY)) {
+      return;
+    }
+
+    hitPaddle(_rightPaddleX, rightY);
+  }
+
+  void _checkBricks(Ball ball) {
+    for (final brick in _bricks) {
+      if (!brick.alive) {
+        continue;
+      }
+
+      const halfW = .056;
+      const halfH = .019;
+
+      final closestX = ball.x.clamp(brick.x - halfW, brick.x + halfW);
+
+      final closestY = ball.y.clamp(brick.y - halfH, brick.y + halfH);
+
+      final dx = ball.x - closestX;
+      final dy = ball.y - closestY;
+
+      if (dx * dx + dy * dy <= .022 * .022) {
+        _hitBrick(brick, ball);
+        return;
+      }
+    }
+  }
+
+  void _hitBrick(Brick brick, Ball ball) {
+    brick.hp--;
+
+    brick.flashing = true;
+
+    _combo++;
+    if (_combo > _bestCombo) {
+      _bestCombo = _combo;
+    }
+    _stageHits++;
+
+    _score += 10 + min(_combo * 2, 50);
+    _checkStageMechanic();
+
+    _addSparks(brick.x, brick.y, 10);
+
+    _checkStageEvent();
+
+    if (brick.hp <= 0) {
+      brick.alive = false;
+
+      if (brick.type == BrickType.explosive) {
+        _explodeBrick(brick);
+      }
+
+      if (brick.type == BrickType.bonus) {
+        _score += 100;
+        _spawnPower(brick.x, brick.y);
+      } else if (_random.nextDouble() < .13) {
+        _spawnPower(brick.x, brick.y);
+      }
+    }
+
+    if (!ball.fire) {
+      ball.vy = -ball.vy;
+    }
+
+    Future<void>.delayed(const Duration(milliseconds: 70), () {
+      if (mounted) {
+        brick.flashing = false;
+      }
+    });
+  }
+
+  void _checkStageEvent() {
+    // Early levels stay calm.
+    if (widget.level < 4) {
+      return;
+    }
+
+    // Do not repeatedly trigger the event.
+    if (_stageEventActive) {
+      return;
+    }
+
+    // Every 12 brick hits, later stages get a short event.
+    if (_stageHits > 0 && _stageHits % 12 == 0) {
+      _stageEventActive = true;
+      _stageEventTimer = 3.5;
+
+      _score += 75;
+
+      _addSparks(_paddle, .88, 28);
+    }
+  }
+
+  void _checkStageMechanic() {
+    if (_powerStageActive) {
+      return;
+    }
+
+    // POWER STAGE is directly calculated from the current COMBO.
+    //
+    // The target combo adapts to the number of bricks in the level:
+    // small levels can reach Power Stage without requiring an
+    // unnecessarily high combo, while larger levels require more.
+
+    const targetCombo = 12;
+
+    final comboProgress = (_combo / targetCombo).clamp(0.0, 1.0);
+
+    _powerStage = comboProgress * 100.0;
+
+    if (_powerStage >= 100.0) {
+      _activatePowerStage();
+    }
+  }
+
+  void _activatePowerStage() {
+    _powerStage = 100;
+    _powerStageActive = true;
+    _powerStageTimer = 8.0;
+    _powerStageAnnouncementTimer = 1.35;
+
+    // Power Stage uses the extra-wide paddle as its defensive effect.
+    _widePaddle = true;
+    _wideTimer = 8.0;
+
+    // Give every active ball the power-stage fire effect.
+    for (final ball in _balls) {
+      ball.fire = true;
+    }
+
+    _score += 250;
+    _addSparks(_paddle, .88, 60);
+  }
+
+  void _explodeBrick(Brick center) {
+    _addSparks(center.x, center.y, 35);
+
+    for (final brick in _bricks) {
+      if (!brick.alive || identical(brick, center)) {
+        continue;
+      }
+
+      final dx = brick.x - center.x;
+      final dy = brick.y - center.y;
+
+      if (sqrt(dx * dx + dy * dy) < .18) {
+        brick.hp--;
+
+        if (brick.hp <= 0) {
+          brick.alive = false;
+          _score += 20;
+
+          if (brick.type == BrickType.bonus) {
+            _score += 50;
+          }
+        }
+      }
+    }
+  }
+
+  void _updatePowers(double dt) {
+    for (final power in List<FallingPower>.from(_powers)) {
+      power.y += dt * .23;
+
+      const paddleY = .905;
+      const paddleHalfHeight = .018;
+      const powerRadius = .026;
+
+      final paddleWidth = _powerStageActive ? .88 : (_widePaddle ? .31 : .23);
+
+      final horizontalHit =
+          power.x + powerRadius >= _paddle - paddleWidth / 2 &&
+          power.x - powerRadius <= _paddle + paddleWidth / 2;
+
+      final verticalHit =
+          power.y + powerRadius >= paddleY - paddleHalfHeight &&
+          power.y - powerRadius <= paddleY + paddleHalfHeight;
+
+      if (horizontalHit && verticalHit) {
+        _activatePower(power.type);
+        _powers.remove(power);
+        continue;
+      }
+
+      if (power.y > 1.05) {
+        _powers.remove(power);
+      }
+    }
+  }
+
+  void _updateSparks(double dt) {
+    for (final spark in List<Spark>.from(_sparks)) {
+      spark.x += spark.vx * dt;
+      spark.y += spark.vy * dt;
+      spark.vy += .45 * dt;
+      spark.life -= dt;
+
+      if (spark.life <= 0) {
+        _sparks.remove(spark);
+      }
+    }
+  }
+
+  void _spawnPower(double x, double y) {
+    final roll = _random.nextInt(6);
+
+    final type = PowerType.values[roll];
+
+    _powers.add(FallingPower(x: x, y: y, type: type));
+  }
+
+  void _activatePower(PowerType type) {
+    switch (type) {
+      case PowerType.multiBall:
+        final current = List<Ball>.from(_balls);
+
+        for (final ball in current) {
+          if (_balls.length >= 5) {
+            break;
+          }
+
+          _balls.add(
+            Ball(
+              x: ball.x,
+              y: ball.y,
+              vx: -ball.vx,
+              vy: ball.vy,
+              fire: ball.fire,
+            ),
+          );
+        }
+        break;
+
+      case PowerType.fireBall:
+        for (final ball in _balls) {
+          ball.fire = true;
+        }
+        break;
+
+      case PowerType.widePaddle:
+        _widePaddle = true;
+        _wideTimer = 12;
+        break;
+
+      case PowerType.shield:
+        _shield = true;
+        _shieldTimer = 15;
+        break;
+
+      case PowerType.laser:
+        _laser = true;
+        _laserTimer = 12;
+        break;
+
+      case PowerType.doublePaddle:
+        _doublePaddle = true;
+        _doublePaddleTimer = 12;
+        break;
+    }
+
+    _score += 50;
+    _addSparks(_paddle, .90, 18);
+  }
+
+  void _loseLife() {
+    _combo = 0;
+
+    if (_shield) {
+      _shield = false;
+
+      _resetBalls();
+      return;
+    }
+
+    _lives--;
+
+    // Losing a life breaks the combo and heavily drains Power Stage.
+    _powerStage = (_powerStage - 35).clamp(0.0, 100.0);
+
+    if (_powerStageActive) {
+      _powerStageActive = false;
+      _powerStageTimer = 0;
+      _powerStageAnnouncementTimer = 0;
+
+      for (final ball in _balls) {
+        ball.fire = false;
+      }
+    }
+
+    if (_lives <= 0) {
+      _gameOver = true;
+      _controller.stop();
+
+      widget.save.saveLevelScore(widget.level, _score);
+
+      return;
+    }
+
+    _resetBalls();
+  }
+
+  void _resetBalls() {
+    _balls.clear();
+
+    _balls.add(
+      Ball(
+        x: _paddle,
+        y: .73,
+        vx: _initialHorizontalSpeed(),
+        vy: -_initialVerticalSpeed(),
+      ),
+    );
+  }
+
+  bool _isStageChallengeCompleted() {
+    switch (_stageConfig.challenge) {
+      case StageChallenge.none:
+        return true;
+
+      case StageChallenge.combo:
+        return _bestCombo >= _stageConfig.target;
+
+      case StageChallenge.lives:
+        return _lives >= _stageConfig.target;
+
+      case StageChallenge.score:
+        return _score >= _stageConfig.target;
+
+      case StageChallenge.survive:
+        return _stageElapsed >= _stageConfig.target;
+    }
+  }
+
+  void _completeLevel() {
+    _levelClear = true;
+    _controller.stop();
+
+    final reward = calculateStageReward(
+      score: _score,
+      lives: _lives,
+      bestCombo: _bestCombo,
+      level: widget.level,
+      bonusMultiplier: _stageConfig.bonusMultiplier,
+      challengeCompleted: _isStageChallengeCompleted(),
+    );
+
+    _earnedStars = reward.stars;
+    _bonusScore = reward.bonusScore;
+    _score += reward.bonusScore;
+
+    widget.save.saveLevelScore(widget.level, _score);
+    widget.save.saveLevelStars(widget.level, _earnedStars);
+    widget.save.saveLevelCombo(widget.level, _bestCombo);
+
+    // The next level requires at least 2 stars.
+    // One-star completion saves the result but does NOT unlock
+    // the next level. The player can use a rewarded ad to skip.
+    if (_earnedStars >= 2) {
+      widget.save.saveLevel(widget.level + 1);
+    }
+  }
+
+  void _nextLevel() {
+    // Two or more stars: unlock and enter the next level normally.
+    // One star: keep the level locked and offer rewarded-ad skip.
+    if (_earnedStars < 2) {
+      _watchAdToUnlockNextLevel();
+      return;
+    }
+
+    if (!mounted) return;
+
+    AdService.instance.maybeShowInterstitial();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(save: widget.save, level: widget.level + 1),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _enterFullscreen();
+      }
+    });
+  }
+
+  void _watchAdToUnlockNextLevel() {
+    if (!mounted || !_levelClear) return;
+
+    if (!AdService.instance.isRewardedReady) {
+      _showRewardUnavailableMessage();
+      return;
+    }
+
+    AdService.instance.showRewarded(
+      onReward: () {
+        if (!mounted || !_levelClear) return;
+
+        widget.save.saveLevel(widget.level + 1);
+
+        Navigator.of(context)
+            .pushReplacement(
+              MaterialPageRoute(
+                builder: (_) =>
+                    GameScreen(save: widget.save, level: widget.level + 1),
+              ),
+            )
+            .then((_) {
+              if (mounted) {
+                _enterFullscreen();
+              }
+            });
+      },
+    );
+  }
+
+  void _showRewardUnavailableMessage() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('الإعلان غير متاح حاليًا، حاول مرة أخرى لاحقًا.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+  }
+
+  void _impact(double x, double y) {
+    _addSparks(x, y, 3);
+  }
+
+  void _addSparks(double x, double y, int amount) {
+    for (int i = 0; i < amount; i++) {
+      final angle = _random.nextDouble() * pi * 2;
+      final speed = .15 + _random.nextDouble() * .55;
+
+      _sparks.add(
+        Spark(
+          x: x,
+          y: y,
+          vx: cos(angle) * speed,
+          vy: sin(angle) * speed,
+          life: .25 + _random.nextDouble() * .35,
+          maxLife: .6,
+        ),
+      );
+    }
+
+    if (_sparks.length > 350) {
+      _sparks.removeRange(0, _sparks.length - 350);
+    }
+  }
+
+  void _movePaddleToFinger(double localX, Size size) {
+    if (size.width <= 0) return;
+
+    final target = (localX / size.width).clamp(.12, .88);
+
+    // Smooth paddle movement prevents jumping when touch resumes.
+    const smoothing = .42;
+
+    setState(() {
+      _paddle += (target - _paddle) * smoothing;
+      _paddle = _paddle.clamp(.12, .88);
+    });
+  }
+
+  void _restartLevel() {
+    AdService.instance.maybeShowInterstitial();
+
+    setState(() {
+      _createLevel();
+      _controller.repeat();
+    });
+  }
+
+  void _watchAdToContinue() {
+    if (_continueUsed) return;
+
+    AdService.instance.showRewarded(
+      onReward: () {
+        if (!mounted || !_gameOver) return;
+
+        setState(() {
+          _continueUsed = true;
+          _gameOver = false;
+          _lives = 1;
+        });
+
+        _resetBalls();
+        _controller.repeat();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('تمت إضافة قلب إضافي بنجاح!'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  void _watchAdForDoubleBonus() {
+    if (_doubleBonusUsed) return;
+
+    AdService.instance.showRewarded(
+      onReward: () {
+        if (!mounted || !_levelClear) return;
+
+        setState(() {
+          _doubleBonusUsed = true;
+          _score += _bonusScore;
+        });
+
+        widget.save.saveLevelScore(widget.level, _score);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('تم منح المكافأة بنجاح!'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  void _goHome() {
+    AdService.instance.maybeShowInterstitial();
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => HomeScreen(save: widget.save)),
+      (route) => false,
+    );
+  }
+
+  Widget _resultNavigation() {
+    final isWin = _levelClear;
+    final accent = isWin ? NeonColors.cyan : NeonColors.pink;
+
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black.withValues(alpha: .72),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF090313),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: accent.withValues(alpha: .9),
+                      width: 1.6,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .30),
+                        blurRadius: 36,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isWin
+                              ? Icons.emoji_events_rounded
+                              : Icons.cancel_rounded,
+                          size: 48,
+                          color: accent,
+                        ),
+
+                        const SizedBox(height: 6),
+
+                        Text(
+                          isWin ? 'LEVEL CLEAR' : 'GAME OVER',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                            shadows: [
+                              Shadow(
+                                color: accent.withValues(alpha: .8),
+                                blurRadius: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          isWin
+                              ? 'YOU BROKE THEM ALL'
+                              : 'TRY AGAIN AND BREAK THEM ALL',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: .8,
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .035),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: accent.withValues(alpha: .15),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _resultStat('LEVEL', '${widget.level}'),
+                              _resultDivider(),
+                              _resultStat('SCORE', '$_score'),
+                              _resultDivider(),
+                              _resultStat('LIVES', '$_lives'),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        if (isWin) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: NeonColors.yellow.withValues(alpha: .05),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: NeonColors.yellow.withValues(alpha: .18),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: NeonColors.yellow.withValues(
+                                    alpha: .12,
+                                  ),
+                                  blurRadius: 18,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(
+                                3,
+                                (index) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  child: Icon(
+                                    index < _earnedStars
+                                        ? Icons.star_rounded
+                                        : Icons.star_border_rounded,
+                                    size: 34,
+                                    color: index < _earnedStars
+                                        ? NeonColors.yellow
+                                        : Colors.white24,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          Text(
+                            '+$_bonusScore BONUS',
+                            style: const TextStyle(
+                              color: NeonColors.yellow,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.4,
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Rewarded ad is ONLY for doubling the bonus.
+                          if (!_doubleBonusUsed) ...[
+                            _doubleRewardCard(),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Main progression button.
+                          _resultButton(
+                            label: 'NEXT LEVEL',
+                            icon: Icons.arrow_forward_rounded,
+                            primary: true,
+                            onPressed: _nextLevel,
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          _resultButton(
+                            label: 'REPLAY LEVEL',
+                            icon: Icons.replay_rounded,
+                            primary: false,
+                            onPressed: _restartLevel,
+                          ),
+                        ] else ...[
+                          if (!_continueUsed) ...[
+                            _extraLifeCard(),
+                            const SizedBox(height: 12),
+                          ],
+
+                          _resultButton(
+                            label: 'TRY AGAIN',
+                            icon: Icons.refresh_rounded,
+                            primary: true,
+                            onPressed: _restartLevel,
+                          ),
+                        ],
+
+                        const SizedBox(height: 10),
+
+                        _resultButton(
+                          label: 'HOME',
+                          icon: Icons.home_rounded,
+                          primary: false,
+                          onPressed: _goHome,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _doubleRewardCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _watchAdForDoubleBonus,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                NeonColors.yellow.withValues(alpha: .20),
+                NeonColors.yellow.withValues(alpha: .055),
+              ],
+            ),
+            border: Border.all(
+              color: NeonColors.yellow.withValues(alpha: .75),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: NeonColors.yellow.withValues(alpha: .32),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: NeonColors.yellow.withValues(alpha: .12),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: NeonColors.yellow.withValues(alpha: .12),
+                  border: Border.all(
+                    color: NeonColors.yellow.withValues(alpha: .70),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.yellow.withValues(alpha: .45),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.ondemand_video_rounded,
+                  color: NeonColors.yellow,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'DOUBLE REWARD',
+                      style: TextStyle(
+                        color: NeonColors.yellow,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'WATCH AD  •  2X BONUS',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: NeonColors.yellow,
+                size: 19,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _extraLifeCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _watchAdToContinue,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                NeonColors.green.withValues(alpha: .20),
+                NeonColors.green.withValues(alpha: .055),
+              ],
+            ),
+            border: Border.all(
+              color: NeonColors.green.withValues(alpha: .75),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: NeonColors.green.withValues(alpha: .30),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: NeonColors.green.withValues(alpha: .12),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: NeonColors.green.withValues(alpha: .12),
+                  border: Border.all(
+                    color: NeonColors.green.withValues(alpha: .70),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: NeonColors.green.withValues(alpha: .42),
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  color: NeonColors.green,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EXTRA LIFE',
+                      style: TextStyle(
+                        color: NeonColors.green,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'WATCH AD  •  GET 1 LIFE',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: NeonColors.green,
+                size: 19,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _resultDivider() {
+    return Container(
+      width: 1,
+      height: 30,
+      color: Colors.white.withValues(alpha: .08),
+    );
+  }
+
+  Widget _resultStat(String title, String value) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _resultButton({
+    required String label,
+    required IconData icon,
+    required bool primary,
+    required VoidCallback onPressed,
+    Color? accent,
+  }) {
+    final color = accent ?? (primary ? NeonColors.cyan : Colors.white70);
+
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 21),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primary
+              ? color.withValues(alpha: .13)
+              : Colors.white.withValues(alpha: .06),
+          foregroundColor: color,
+          elevation: 0,
+          side: BorderSide(
+            color: color.withValues(alpha: primary ? .75 : .35),
+            width: 1.2,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String get _stageName {
+    switch (_stageConfig.theme) {
+      case StageTheme.classic:
+        return 'CLASSIC';
+      case StageTheme.neon:
+        return 'NEON';
+      case StageTheme.cyber:
+        return 'CYBER';
+      case StageTheme.reactor:
+        return 'REACTOR';
+      case StageTheme.voidZone:
+        return 'VOID';
+      case StageTheme.galaxy:
+        return 'GALAXY';
+    }
+  }
+
+  String get _stageChallenge {
+    switch (_stageConfig.challenge) {
+      case StageChallenge.none:
+        return 'BREAK THEM ALL';
+      case StageChallenge.survive:
+        return 'SURVIVE ${_stageConfig.target}s';
+      case StageChallenge.combo:
+        return 'COMBO x${_stageConfig.target}';
+      case StageChallenge.lives:
+        return 'KEEP ${_stageConfig.target} LIVES';
+      case StageChallenge.score:
+        return 'SCORE ${_stageConfig.target}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: NeonColors.background,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          _lastSize = Size(constraints.maxWidth, constraints.maxHeight);
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (details) {
+              if (!_paused && !_gameOver && !_levelClear) {
+                _movePaddleToFinger(details.localPosition.dx, _lastSize);
+              }
+            },
+            onPanUpdate: (details) {
+              if (!_paused && !_gameOver && !_levelClear) {
+                _movePaddleToFinger(details.localPosition.dx, _lastSize);
+              }
+            },
+            onTapDown: (details) {
+              final tap = details.localPosition;
+
+              if (tap.dy <= 78 && tap.dx >= _lastSize.width - 70) {
+                if (!_gameOver && !_levelClear) {
+                  setState(() {
+                    _paused = !_paused;
+                  });
+
+                  if (_paused) {
+                    _controller.stop();
+                  } else {
+                    _controller.repeat();
+                  }
+                }
+                return;
+              }
+
+              // Result screen owns all taps while visible.
+              // Do not let the underlying game gesture restart/advance the level.
+              if (_gameOver || _levelClear) {
+                return;
+              }
+
+              if (_paused) {
+                return;
+              }
+
+              if (_laser) {
+                _fireLaser();
+              }
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CustomPaint(
+                  painter: _NeonGamePainter(
+                    level: widget.level,
+                    stageName: _stageName,
+                    stageChallenge: _stageChallenge,
+                    score: _score,
+                    lives: _lives,
+                    combo: _combo,
+                    powerStage: _powerStage,
+                    powerStageActive: _powerStageActive,
+                    powerStageTimer: _powerStageTimer,
+                    powerStageAnnouncementTimer: _powerStageAnnouncementTimer,
+                    stageEventActive: _stageEventActive,
+                    stageEventTimer: _stageEventTimer,
+                    stageMechanicActive: _stageMechanicActive,
+                    stageMechanicTimer: _stageMechanicTimer,
+                    paddle: _paddle,
+                    balls: _balls,
+                    bricks: _bricks,
+                    powers: _powers,
+                    sparks: _sparks,
+                    paused: _paused,
+                    gameOver: _gameOver,
+                    levelClear: _levelClear,
+                    widePaddle: _widePaddle,
+                    shield: _shield,
+                    laser: _laser,
+                    doublePaddle: _doublePaddle,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+
+                if (_gameOver || _levelClear) _resultNavigation(),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _fireLaser() {
+    if (!_laser) {
+      return;
+    }
+
+    _score += 5;
+
+    for (final brick in _bricks) {
+      if (!brick.alive) {
+        continue;
+      }
+
+      if ((brick.x - _paddle).abs() < .055) {
+        brick.hp--;
+
+        if (brick.hp <= 0) {
+          brick.alive = false;
+          _score += 20;
+
+          if (brick.type == BrickType.explosive) {
+            _explodeBrick(brick);
+          }
+        }
+
+        _addSparks(brick.x, brick.y, 8);
+        break;
+      }
+    }
+  }
+}
+
+class _NeonGamePainter extends CustomPainter {
+  _NeonGamePainter({
+    required this.level,
+    required this.stageName,
+    required this.stageChallenge,
+    required this.score,
+    required this.stageEventActive,
+    required this.stageEventTimer,
+    required this.stageMechanicActive,
+    required this.stageMechanicTimer,
+    required this.lives,
+    required this.combo,
+    required this.powerStage,
+    required this.powerStageActive,
+    required this.powerStageTimer,
+    required this.powerStageAnnouncementTimer,
+    required this.paddle,
+    required this.balls,
+    required this.bricks,
+    required this.powers,
+    required this.sparks,
+    required this.paused,
+    required this.gameOver,
+    required this.levelClear,
+    required this.widePaddle,
+    required this.shield,
+    required this.laser,
+    required this.doublePaddle,
+  });
+
+  final int level;
+  final String stageName;
+  final String stageChallenge;
+  final int score;
+  final bool stageEventActive;
+  final double stageEventTimer;
+  final bool stageMechanicActive;
+  final double stageMechanicTimer;
+  final int lives;
+  final int combo;
+
+  final double powerStage;
+  final bool powerStageActive;
+  final double powerStageTimer;
+  final double powerStageAnnouncementTimer;
+
+  final double paddle;
+
+  final List<Ball> balls;
+  final List<Brick> bricks;
+  final List<FallingPower> powers;
+  final List<Spark> sparks;
+
+  final bool paused;
+  final bool gameOver;
+  final bool levelClear;
+
+  final bool widePaddle;
+  final bool shield;
+  final bool laser;
+  final bool doublePaddle;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _background(canvas, size);
+    _drawHud(canvas, size);
+    _drawBricks(canvas, size);
+    _drawPowers(canvas, size);
+    _drawPaddle(canvas, size);
+    _drawBalls(canvas, size);
+    _drawSparks(canvas, size);
+
+    if (paused) {
+      _overlay(canvas, size, 'PAUSED', 'Tap the pause button to resume');
+    }
+  }
+
+  void _background(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF13031F), Color(0xFF05020D), Color(0xFF010107)],
+        ).createShader(rect),
+    );
+
+    final grid = Paint()
+      ..color = NeonColors.purple.withValues(alpha: .08)
+      ..strokeWidth = 1;
+
+    for (double y = 70; y < size.height; y += 38) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    for (double x = 0; x < size.width; x += 38) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+  }
+
+  Color _stageAccent() {
+    switch (stageName) {
+      case 'NEON':
+        return NeonColors.cyan;
+      case 'CYBER':
+        return const Color(0xFF8A7CFF);
+      case 'REACTOR':
+        return const Color(0xFFFFB347);
+      case 'VOID':
+        return const Color(0xFFB86BFF);
+      case 'GALAXY':
+        return const Color(0xFF7DD3FC);
+      default:
+        return NeonColors.cyan;
+    }
+  }
+
+  void _drawStageEvent(Canvas canvas, Size size) {
+    if (!stageEventActive) {
+      return;
+    }
+
+    final accent = _stageAccent();
+
+    final progress = (stageEventTimer / 3.5).clamp(0.0, 1.0);
+
+    final glow = Paint()
+      ..color = accent.withValues(alpha: .10 + progress * .12)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height * .88),
+      58 + (1 - progress) * 20,
+      glow,
+    );
+
+    final border = Paint()
+      ..color = accent.withValues(alpha: .35 + progress * .35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height * .88),
+      34 + (1 - progress) * 16,
+      border,
+    );
+  }
+
+  void _drawStageIdentity(Canvas canvas, Size size) {
+    final titlePainter = TextPainter(
+      text: TextSpan(
+        text: 'LEVEL $level  •  $stageName',
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    titlePainter.paint(canvas, const Offset(14, 72));
+
+    final dividerPaint = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .16)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(Offset(14, 86), Offset(size.width - 14, 86), dividerPaint);
+
+    final challengePainter = TextPainter(
+      text: TextSpan(
+        text: stageChallenge,
+        style: const TextStyle(
+          color: NeonColors.cyan,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .8,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    challengePainter.paint(
+      canvas,
+      Offset(size.width - challengePainter.width - 14, 72),
+    );
+  }
+
+  void _drawPowerStage(Canvas canvas, Size size) {
+    final progress = (powerStage / 100.0).clamp(0.0, 1.0);
+
+    final accent = powerStageActive
+        ? NeonColors.cyan
+        : progress >= .70
+        ? NeonColors.yellow
+        : NeonColors.purple;
+
+    final left = 18.0;
+    final right = size.width - 18.0;
+    final top = 91.0;
+    final height = 10.0;
+
+    final background = RRect.fromRectAndRadius(
+      Rect.fromLTRB(left, top, right, top + height),
+      const Radius.circular(8),
+    );
+
+    canvas.drawRRect(
+      background,
+      Paint()..color = Colors.black.withValues(alpha: .48),
+    );
+
+    if (progress > 0) {
+      final fill = RRect.fromRectAndRadius(
+        Rect.fromLTRB(
+          left,
+          top,
+          left + (right - left) * progress,
+          top + height,
+        ),
+        const Radius.circular(8),
+      );
+
+      canvas.drawRRect(
+        fill,
+        Paint()
+          ..color = accent.withValues(alpha: .85)
+          ..maskFilter = progress >= .70
+              ? const MaskFilter.blur(BlurStyle.normal, 5)
+              : null,
+      );
+    }
+
+    final border = RRect.fromRectAndRadius(
+      Rect.fromLTRB(left, top, right, top + height),
+      const Radius.circular(8),
+    );
+
+    canvas.drawRRect(
+      border,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = powerStageActive ? 2 : 1
+        ..color = accent.withValues(alpha: powerStageActive ? .8 : .28),
+    );
+
+    _text(
+      canvas,
+      powerStageActive
+          ? 'POWER STAGE  ${powerStageTimer.ceil()}'
+          : 'POWER STAGE  ${powerStage.round()}%',
+      Offset(left, top + 13),
+      8,
+      accent,
+    );
+
+    if (powerStageAnnouncementTimer > 0 && !paused) {
+      final pulse = (powerStageAnnouncementTimer / 1.35).clamp(0.0, 1.0);
+
+      final glow = Paint()
+        ..color = NeonColors.cyan.withValues(alpha: .12 + pulse * .18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+
+      canvas.drawCircle(
+        Offset(size.width / 2, size.height * .50),
+        90 + (1 - pulse) * 35,
+        glow,
+      );
+
+      _centerText(
+        canvas,
+        'POWER STAGE',
+        Offset(size.width / 2, size.height * .50),
+        30 + (1 - pulse) * 8,
+        NeonColors.cyan,
+      );
+    }
+  }
+
+  void _drawHud(Canvas canvas, Size size) {
+    _drawStageIdentity(canvas, size);
+    _drawStageEvent(canvas, size);
+    _drawPowerStage(canvas, size);
+
+    if (combo >= 2 && !paused) {
+      final double comboSize = combo >= 10
+          ? 21
+          : combo >= 5
+          ? 19.5
+          : 18;
+
+      final comboHot = combo >= 10 || powerStage >= 70;
+
+      _centerText(
+        canvas,
+        'COMBO x$combo',
+        Offset(size.width / 2, 37),
+        comboSize,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
+      );
+    }
+
+    const double top = 30;
+
+    final hudRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(8, 8, size.width - 16, 58),
+      const Radius.circular(18),
+    );
+
+    canvas.drawRRect(
+      hudRect,
+      Paint()..color = Colors.black.withValues(alpha: .28),
+    );
+
+    canvas.drawRRect(
+      hudRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = NeonColors.cyan.withValues(alpha: .20),
+    );
+
+    _text(canvas, 'LEVEL $level', const Offset(20, top), 12, Colors.white);
+
+    _text(canvas, 'SCORE $score', const Offset(20, 51), 11, NeonColors.cyan);
+
+    _text(
+      canvas,
+      '♥ $lives',
+      Offset(size.width - 92, top),
+      13,
+      NeonColors.pink,
+    );
+
+    _iconButton(
+      canvas,
+      Offset(size.width - 30, 45),
+      paused ? Icons.play_arrow : Icons.pause,
+    );
+
+    if (laser) {
+      _text(canvas, 'LASER', Offset(size.width - 82, 63), 8, NeonColors.orange);
+    }
+  }
+
+  void _drawBricks(Canvas canvas, Size size) {
+    for (final brick in bricks) {
+      if (!brick.alive) {
+        continue;
+      }
+
+      const gameplayTopOffset = .055;
+
+      final center = Offset(
+        brick.x * size.width,
+        (brick.y + gameplayTopOffset) * size.height,
+      );
+
+      final width = size.width * .108;
+      final height = size.height * .038;
+
+      final rect = Rect.fromCenter(
+        center: center,
+        width: width,
+        height: height,
+      );
+
+      final radius = Radius.circular(7);
+      final rrect = RRect.fromRectAndRadius(rect, radius);
+      final color = _brickColor(brick);
+
+      // ----------------------------------------------------------
+      // SOFT NEON AURA
+      // ----------------------------------------------------------
+      final aura = Paint()
+        ..color = color.withValues(alpha: brick.flashing ? .70 : .30)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+
+      canvas.drawRRect(rrect, aura);
+
+      // ----------------------------------------------------------
+      // DARK GLASS BODY
+      // ----------------------------------------------------------
+      final bodyColor = Color.lerp(
+        Colors.black,
+        color,
+        brick.type == BrickType.steel ? .28 : .58,
+      )!;
+
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = bodyColor.withValues(alpha: .92),
+      );
+
+      // Inner colored glass layer.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.deflate(1.2), const Radius.circular(5.5)),
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = color.withValues(alpha: .24),
+      );
+
+      // ----------------------------------------------------------
+      // TOP GLASS HIGHLIGHT
+      // ----------------------------------------------------------
+      final highlightRect = Rect.fromLTRB(
+        rect.left + 3,
+        rect.top + 2,
+        rect.right - 3,
+        rect.top + height * .34,
+      );
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(highlightRect, const Radius.circular(4)),
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withValues(alpha: .34),
+              Colors.white.withValues(alpha: .02),
+            ],
+          ).createShader(highlightRect),
+      );
+
+      // ----------------------------------------------------------
+      // INNER NEON EDGE
+      // ----------------------------------------------------------
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.deflate(1), const Radius.circular(6)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.1
+          ..color = Colors.white.withValues(alpha: .48),
+      );
+
+      // Main neon border.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.deflate(.5), const Radius.circular(7)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = brick.flashing ? 2.8 : 1.8
+          ..color = brick.flashing ? Colors.white : color.withValues(alpha: .95)
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            brick.flashing ? 5 : 2.5,
+          ),
+      );
+
+      // ----------------------------------------------------------
+      // TYPE-SPECIFIC DESIGN
+      // ----------------------------------------------------------
+      switch (brick.type) {
+        case BrickType.normal:
+          // Small central glass core.
+          canvas.drawCircle(
+            center,
+            min(width, height) * .13,
+            Paint()
+              ..color = color.withValues(alpha: .18)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+          );
+
+          canvas.drawCircle(
+            center,
+            min(width, height) * .055,
+            Paint()..color = Colors.white.withValues(alpha: .75),
+          );
+          break;
+
+        case BrickType.explosive:
+          _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
+          break;
+
+        case BrickType.steel:
+          _drawSteelBrickIcon(canvas, center, min(width, height), brick.hp);
+          break;
+
+        case BrickType.bonus:
+          _drawBonusBrickIcon(canvas, center, min(width, height));
+          break;
+      }
+
+      // ----------------------------------------------------------
+      // HIT FLASH
+      // ----------------------------------------------------------
+      if (brick.flashing) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = Colors.white.withValues(alpha: .18),
+        );
+      }
+    }
+  }
+
+  void _drawExplosiveBrickIcon(
+    Canvas canvas,
+    Offset center,
+    double size,
+    Color color,
+  ) {
+    final glow = Paint()
+      ..color = color.withValues(alpha: .65)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    canvas.drawCircle(center, size * .25, glow);
+
+    final path = Path();
+    const points = 8;
+
+    for (int i = 0; i < points; i++) {
+      final angle = -pi / 2 + i * pi / 4;
+      final radius = i.isEven ? size * .25 : size * .11;
+
+      final point = Offset(
+        center.dx + cos(angle) * radius,
+        center.dy + sin(angle) * radius,
+      );
+
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+
+    path.close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = color,
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
+    );
+
+    // Explosion core.
+    canvas.drawCircle(center, size * .075, Paint()..color = Colors.white);
+
+    // Small sparks.
+    final sparkPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .85)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < 4; i++) {
+      final angle = i * pi / 2 + pi / 4;
+      final inner = size * .27;
+      final outer = size * .36;
+
+      canvas.drawLine(
+        Offset(center.dx + cos(angle) * inner, center.dy + sin(angle) * inner),
+        Offset(center.dx + cos(angle) * outer, center.dy + sin(angle) * outer),
+        sparkPaint,
+      );
+    }
+  }
+
+  void _drawSteelBrickIcon(Canvas canvas, Offset center, double size, int hp) {
+    final shield = Path()
+      ..moveTo(center.dx, center.dy - size * .29)
+      ..lineTo(center.dx + size * .23, center.dy - size * .17)
+      ..lineTo(center.dx + size * .18, center.dy + size * .14)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + size * .31,
+        center.dx - size * .18,
+        center.dy + size * .14,
+      )
+      ..lineTo(center.dx - size * .23, center.dy - size * .17)
+      ..close();
+
+    canvas.drawPath(
+      shield,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..shader =
+            const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFE7EEF2), Color(0xFF78909C), Color(0xFF263238)],
+            ).createShader(
+              Rect.fromCenter(center: center, width: size, height: size),
+            ),
+    );
+
+    canvas.drawPath(
+      shield,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .80),
+    );
+
+    final hpText = TextPainter(
+      text: TextSpan(
+        text: '$hp',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    hpText.paint(
+      canvas,
+      Offset(center.dx - hpText.width / 2, center.dy - hpText.height / 2),
+    );
+  }
+
+  void _drawBonusBrickIcon(Canvas canvas, Offset center, double size) {
+    const points = 5;
+    final path = Path();
+
+    for (int i = 0; i < points * 2; i++) {
+      final angle = -pi / 2 + i * pi / points;
+      final radius = i.isEven ? size * .30 : size * .13;
+
+      final point = Offset(
+        center.dx + cos(angle) * radius,
+        center.dy + sin(angle) * radius,
+      );
+
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+
+    path.close();
+
+    final glow = Paint()
+      ..color = NeonColors.yellow.withValues(alpha: .60)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+
+    canvas.drawPath(path, glow);
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = NeonColors.yellow,
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..color = Colors.white.withValues(alpha: .90),
+    );
+
+    canvas.drawCircle(center, size * .055, Paint()..color = Colors.white);
+  }
+
+  Color _brickColor(Brick brick) {
+    switch (brick.type) {
+      case BrickType.normal:
+        final colors = [
+          NeonColors.cyan,
+          NeonColors.purple,
+          NeonColors.pink,
+          NeonColors.blue,
+          NeonColors.green,
+        ];
+
+        return colors[((brick.x * 100).round() + (brick.y * 100).round()) %
+            colors.length];
+
+      case BrickType.explosive:
+        return NeonColors.orange;
+
+      case BrickType.steel:
+        return const Color(0xFF78909C);
+
+      case BrickType.bonus:
+        return NeonColors.yellow;
+    }
+  }
+
+  void _drawPaddle(Canvas canvas, Size size) {
+    final center = Offset(paddle * size.width, size.height * .905);
+
+    final width = powerStageActive
+        ? size.width * .88
+        : widePaddle
+        ? size.width * .31
+        : size.width * .23;
+
+    final height = size.height * .036;
+    final rect = Rect.fromCenter(center: center, width: width, height: height);
+
+    // المضرب الرئيسي
+    final glow = Paint()
+      ..color = NeonColors.cyan.withValues(alpha: .28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      glow,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      Paint()..color = NeonColors.cyan,
+    );
+
+    // شريط داخلي يعطي المضرب شكلاً أجمل
+    final inner = Rect.fromCenter(
+      center: Offset(center.dx, center.dy - height * .12),
+      width: width * .72,
+      height: height * .22,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(inner, const Radius.circular(5)),
+      Paint()..color = Colors.white.withValues(alpha: .85),
+    );
+
+    if (doublePaddle) {
+      // DOUBLE PADDLE — Professional Neon Design
+      final sideWidth = size.width * .18;
+      final sideHeight = size.height * .030;
+
+      final leftCenter = Offset(_leftPaddleX * size.width, size.height * .875);
+      final rightCenter = Offset(
+        _rightPaddleX * size.width,
+        size.height * .845,
+      );
+      void drawNeonPaddle(Offset c, Color color, double scale) {
+        final w = sideWidth * scale;
+        final h = sideHeight;
+
+        final rect = Rect.fromCenter(center: c, width: w, height: h);
+
+        // Outer neon glow
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect.inflate(5), const Radius.circular(14)),
+          Paint()
+            ..color = color.withValues(alpha: .12)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+        );
+
+        // Strong neon glow
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect.inflate(2), const Radius.circular(12)),
+          Paint()
+            ..color = color.withValues(alpha: .35)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9),
+        );
+
+        // Main body
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(10)),
+          Paint()..color = color,
+        );
+
+        // Dark inner panel
+        final inner = Rect.fromCenter(
+          center: Offset(c.dx, c.dy + 1),
+          width: w * .82,
+          height: h * .42,
+        );
+
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(inner, const Radius.circular(5)),
+          Paint()..color = const Color(0xFF09051A),
+        );
+
+        // Bright center energy line
+        final energy = Paint()
+          ..color = Colors.white.withValues(alpha: .95)
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+        canvas.drawLine(
+          Offset(c.dx - w * .32, c.dy),
+          Offset(c.dx + w * .32, c.dy),
+          energy,
+        );
+
+        // Small neon end caps
+        final capPaint = Paint()..color = Colors.white;
+
+        canvas.drawCircle(Offset(c.dx - w * .43, c.dy), 2.2, capPaint);
+
+        canvas.drawCircle(Offset(c.dx + w * .43, c.dy), 2.2, capPaint);
+      }
+
+      // Three-level visual composition:
+      // left = upper, right = higher, main = lowest.
+      drawNeonPaddle(leftCenter, NeonColors.pink, 1.0);
+      drawNeonPaddle(rightCenter, NeonColors.yellow, 1.0);
+
+      // Energy bridge between the two bonus paddles
+      final bridgePaint = Paint()
+        ..color = NeonColors.purple.withValues(alpha: .22)
+        ..strokeWidth = 1.5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+
+      canvas.drawLine(
+        Offset(leftCenter.dx + sideWidth * .48, leftCenter.dy),
+        Offset(rightCenter.dx - sideWidth * .48, rightCenter.dy),
+        bridgePaint,
+      );
+    }
+  }
+
+  void _drawBalls(Canvas canvas, Size size) {
+    for (final ball in balls) {
+      final color = ball.fire ? NeonColors.orange : NeonColors.cyan;
+
+      // ─────────────────────────────────────────────
+      // PREMIUM NEON TRAIL
+      // ─────────────────────────────────────────────
+      for (int i = ball.trail.length - 1; i >= 0; i--) {
+        final p = ball.trail[i];
+
+        final t = (ball.trail.length - i) / ball.trail.length;
+
+        final alpha = t * .20;
+        final trailRadius = 2.5 + t * 5.5;
+
+        // Soft outer trail glow.
+        canvas.drawCircle(
+          Offset(p.dx * size.width, p.dy * size.height),
+          trailRadius + 5,
+          Paint()
+            ..color = color.withValues(alpha: alpha * .45)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+        );
+
+        // Bright inner trail.
+        canvas.drawCircle(
+          Offset(p.dx * size.width, p.dy * size.height),
+          trailRadius,
+          Paint()..color = color.withValues(alpha: alpha),
+        );
+      }
+
+      final center = Offset(ball.x * size.width, ball.y * size.height);
+
+      // ─────────────────────────────────────────────
+      // LARGE ATMOSPHERIC GLOW
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        center,
+        25,
+        Paint()
+          ..color = color.withValues(alpha: .10)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+      );
+
+      canvas.drawCircle(
+        center,
+        20,
+        Paint()
+          ..color = color.withValues(alpha: .20)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      );
+
+      // ─────────────────────────────────────────────
+      // NEON OUTER RING
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        center,
+        13,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..color = color.withValues(alpha: .95)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+
+      // ─────────────────────────────────────────────
+      // CORE — 3D RADIAL GRADIENT
+      // ─────────────────────────────────────────────
+      final coreRect = Rect.fromCircle(center: center, radius: 11);
+
+      canvas.drawCircle(
+        center,
+        11,
+        Paint()
+          ..shader = RadialGradient(
+            center: const Alignment(-.38, -.42),
+            radius: 1.0,
+            colors: [
+              Colors.white,
+              color.withValues(alpha: .98),
+              color.withValues(alpha: .90),
+              const Color(0xFF050014),
+            ],
+            stops: const [0.0, .28, .68, 1.0],
+          ).createShader(coreRect),
+      );
+
+      // ─────────────────────────────────────────────
+      // INNER ENERGY CORE
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        Offset(center.dx + 1, center.dy + 1),
+        5.2,
+        Paint()
+          ..color = Colors.white.withValues(alpha: .18)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+
+      // ─────────────────────────────────────────────
+      // SPECULAR HIGHLIGHT
+      // ─────────────────────────────────────────────
+      canvas.drawCircle(
+        Offset(center.dx - 3.6, center.dy - 3.8),
+        3.1,
+        Paint()..color = Colors.white.withValues(alpha: .96),
+      );
+
+      canvas.drawCircle(
+        Offset(center.dx - 4.5, center.dy - 4.7),
+        1.35,
+        Paint()..color = Colors.white,
+      );
+
+      // ─────────────────────────────────────────────
+      // FIRE BALL EXTRA CORE
+      // ─────────────────────────────────────────────
+      if (ball.fire) {
+        canvas.drawCircle(
+          center,
+          7,
+          Paint()
+            ..color = Colors.yellow.withValues(alpha: .28)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+        );
+
+        canvas.drawCircle(center, 3.5, Paint()..color = Colors.yellow);
+      }
+    }
+  }
+
+  void _drawPowers(Canvas canvas, Size size) {
+    for (final power in powers) {
+      final center = Offset(power.x * size.width, power.y * size.height);
+
+      final color = _powerColor(power.type);
+
+      canvas.drawCircle(
+        center,
+        19,
+        Paint()
+          ..color = color.withValues(alpha: .25)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+      );
+
+      canvas.drawCircle(
+        center,
+        13,
+        Paint()..color = color.withValues(alpha: .9),
+      );
+
+      _text(
+        canvas,
+        _powerSymbol(power.type),
+        Offset(center.dx - 6, center.dy - 7),
+        12,
+        Colors.white,
+      );
+    }
+  }
+
+  Color _powerColor(PowerType type) {
+    switch (type) {
+      case PowerType.multiBall:
+        return NeonColors.purple;
+      case PowerType.fireBall:
+        return NeonColors.orange;
+      case PowerType.widePaddle:
+        return NeonColors.cyan;
+      case PowerType.shield:
+        return NeonColors.green;
+      case PowerType.laser:
+        return NeonColors.pink;
+      case PowerType.doublePaddle:
+        return NeonColors.yellow;
+    }
+  }
+
+  String _powerSymbol(PowerType type) {
+    switch (type) {
+      case PowerType.multiBall:
+        return '×';
+      case PowerType.fireBall:
+        return 'F';
+      case PowerType.widePaddle:
+        return 'W';
+      case PowerType.shield:
+        return 'S';
+      case PowerType.laser:
+        return 'L';
+      case PowerType.doublePaddle:
+        return 'D';
+    }
+  }
+
+  void _drawSparks(Canvas canvas, Size size) {
+    for (final spark in sparks) {
+      final alpha = (spark.life / spark.maxLife).clamp(0.0, 1.0);
+
+      canvas.drawCircle(
+        Offset(spark.x * size.width, spark.y * size.height),
+        2.2,
+        Paint()
+          ..color = Colors.white.withValues(alpha: alpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+    }
+  }
+
+  void _overlay(Canvas canvas, Size size, String title, String subtitle) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = Colors.black.withValues(alpha: .68),
+    );
+
+    final center = Offset(size.width / 2, size.height * .48);
+
+    canvas.drawCircle(
+      center,
+      100,
+      Paint()
+        ..color = NeonColors.purple.withValues(alpha: .12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30),
+    );
+
+    _centerText(
+      canvas,
+      title,
+      Offset(center.dx, center.dy - 25),
+      28,
+      NeonColors.cyan,
+    );
+
+    _centerText(
+      canvas,
+      subtitle,
+      Offset(center.dx, center.dy + 18),
+      13,
+      Colors.white70,
+    );
+  }
+
+  void _iconButton(Canvas canvas, Offset center, IconData icon) {
+    canvas.drawCircle(
+      center,
+      17,
+      Paint()
+        ..color = NeonColors.purple.withValues(alpha: .3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+    );
+
+    canvas.drawCircle(
+      center,
+      15,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = NeonColors.cyan,
+    );
+
+    final painter = TextPainter(
+      text: TextSpan(
+        text: icon == Icons.pause ? 'Ⅱ' : '▶',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    painter.paint(
+      canvas,
+      Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
+    );
+  }
+
+  void _text(
+    Canvas canvas,
+    String text,
+    Offset position,
+    double size,
+    Color color,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    painter.paint(canvas, position);
+  }
+
+  void _centerText(
+    Canvas canvas,
+    String text,
+    Offset center,
+    double size,
+    Color color,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    painter.paint(
+      canvas,
+      Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _NeonGamePainter oldDelegate) {
+    return true;
+  }
+}
