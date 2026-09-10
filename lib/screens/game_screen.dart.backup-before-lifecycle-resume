@@ -188,18 +188,6 @@ class _GameScreenState extends State<GameScreen>
         });
         _controller.stop();
       }
-      return;
-    }
-
-    if (state == AppLifecycleState.resumed) {
-      if (!_gameOver && !_levelClear && _paused) {
-        _enterFullscreen();
-        setState(() {
-          // Keep the game paused after returning.
-          // The pause/play button remains available for the player.
-          _paused = true;
-        });
-      }
     }
   }
 
@@ -734,25 +722,12 @@ class _GameScreenState extends State<GameScreen>
       final baseX = _movingBrickBaseX[brick]!;
       final phase = _movingBrickPhase[brick]!;
 
-      // Keep most moving bricks at the normal distance,
-      // but give some bricks a wider movement for variety.
-      final brickIndex = _bricks.indexOf(brick);
-      final wideMovement = brickIndex >= 0 && brickIndex % 3 == 0;
-
-      final amplitude = wideMovement ? .055 : .022;
+      // Slightly wider movement, still lightweight.
+      const amplitude = .022;
       const speed = 0.75;
 
       _movingBrickPhase[brick] = phase + dt * speed;
-
-      // Keep the entire brick safely inside the horizontal screen bounds.
-      const halfBrickWidth = .055;
-      final minX = halfBrickWidth;
-      final maxX = 1.0 - halfBrickWidth;
-
-      brick.x = (baseX + amplitude * sin(_movingBrickPhase[brick]!)).clamp(
-        minX,
-        maxX,
-      );
+      brick.x = baseX + amplitude * sin(_movingBrickPhase[brick]!);
     }
   }
 

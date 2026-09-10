@@ -175,34 +175,6 @@ class _GameScreenState extends State<GameScreen>
           ..repeat();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      if (!_gameOver && !_levelClear && !_paused) {
-        setState(() {
-          _paused = true;
-        });
-        _controller.stop();
-      }
-      return;
-    }
-
-    if (state == AppLifecycleState.resumed) {
-      if (!_gameOver && !_levelClear && _paused) {
-        _enterFullscreen();
-        setState(() {
-          // Keep the game paused after returning.
-          // The pause/play button remains available for the player.
-          _paused = true;
-        });
-      }
-    }
-  }
-
   Future<void> _enterFullscreen() async {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -734,25 +706,12 @@ class _GameScreenState extends State<GameScreen>
       final baseX = _movingBrickBaseX[brick]!;
       final phase = _movingBrickPhase[brick]!;
 
-      // Keep most moving bricks at the normal distance,
-      // but give some bricks a wider movement for variety.
-      final brickIndex = _bricks.indexOf(brick);
-      final wideMovement = brickIndex >= 0 && brickIndex % 3 == 0;
-
-      final amplitude = wideMovement ? .055 : .022;
+      // Slightly wider movement, still lightweight.
+      const amplitude = .022;
       const speed = 0.75;
 
       _movingBrickPhase[brick] = phase + dt * speed;
-
-      // Keep the entire brick safely inside the horizontal screen bounds.
-      const halfBrickWidth = .055;
-      final minX = halfBrickWidth;
-      final maxX = 1.0 - halfBrickWidth;
-
-      brick.x = (baseX + amplitude * sin(_movingBrickPhase[brick]!)).clamp(
-        minX,
-        maxX,
-      );
+      brick.x = baseX + amplitude * sin(_movingBrickPhase[brick]!);
     }
   }
 
@@ -1945,10 +1904,12 @@ class _GameScreenState extends State<GameScreen>
                                 final uri = Uri.parse(
                                   'https://ebrahassad.github.io/#apps',
                                 );
-                                await launchUrl(
-                                  uri,
-                                  mode: LaunchMode.externalApplication,
-                                );
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
                               },
                             ),
                           ] else ...[
@@ -2162,7 +2123,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 child: const Icon(
                   Icons.favorite_rounded,
-                  color: NeonColors.yellow,
+                  color: NeonColors.green,
                   size: 29,
                 ),
               ),
@@ -2569,76 +2530,44 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawStageIdentity(Canvas canvas, Size size) {
-    // Keep the stage name at the existing Y=72 level.
-    // COMBO and POWER STAGE share this exact same row.
-    final stagePainter = TextPainter(
+    final titlePainter = TextPainter(
       text: TextSpan(
-        text: stageName,
+        text: 'LEVEL $level  •  $stageName',
         style: const TextStyle(
           color: Colors.white70,
           fontSize: 10,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.0,
+          letterSpacing: 1.2,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    stagePainter.paint(canvas, const Offset(14, 72));
+    titlePainter.paint(canvas, const Offset(14, 72));
 
-    // Live combo counter on the same row.
-    if (combo >= 2 && !paused) {
-      final comboSize = combo >= 10
-          ? 12.0
-          : combo >= 5
-          ? 11.0
-          : 10.0;
-
-      final comboHot = combo >= 10 || powerStage >= 70;
-
-      _centerText(
-        canvas,
-        'COMBO x$combo',
-        Offset(size.width * 0.50, 77),
-        comboSize,
-        comboHot ? NeonColors.cyan : NeonColors.yellow,
-      );
-    }
-    // Live Power Stage percentage on the same row.
-    final powerAccent = powerStageActive
-        ? NeonColors.cyan
-        : powerStage >= 70
-        ? NeonColors.yellow
-        : NeonColors.purple;
-
-    final powerText = powerStageActive
-        ? 'POWER STAGE ${powerStageTimer.ceil()}'
-        : 'POWER STAGE ${powerStage.round()}';
-
-    final powerPainter = TextPainter(
-      text: TextSpan(
-        text: powerText,
-        style: TextStyle(
-          color: powerAccent,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: .7,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    powerPainter.paint(
-      canvas,
-      Offset(size.width - powerPainter.width - 14, 72),
-    );
-
-    // Divider remains directly below this row.
     final dividerPaint = Paint()
       ..color = NeonColors.cyan.withValues(alpha: .16)
       ..strokeWidth = 1;
 
     canvas.drawLine(Offset(14, 86), Offset(size.width - 14, 86), dividerPaint);
+
+    final challengePainter = TextPainter(
+      text: TextSpan(
+        text: stageChallenge,
+        style: const TextStyle(
+          color: NeonColors.cyan,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .8,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    challengePainter.paint(
+      canvas,
+      Offset(size.width - challengePainter.width - 14, 72),
+    );
   }
 
   void _drawPowerStage(Canvas canvas, Size size) {
@@ -2697,6 +2626,16 @@ class _NeonGamePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = powerStageActive ? 2 : 1
         ..color = accent.withValues(alpha: powerStageActive ? .8 : .28),
+    );
+
+    _text(
+      canvas,
+      powerStageActive
+          ? 'POWER STAGE  ${powerStageTimer.ceil()}'
+          : 'POWER STAGE  ${powerStage.round()}%',
+      Offset(left, top + 13),
+      8,
+      accent,
     );
 
     if (powerStageAnnouncementTimer > 0 && !paused) {
@@ -2782,6 +2721,23 @@ class _NeonGamePainter extends CustomPainter {
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
 
+    // Compact COMBO beside the stage pattern name.
+    if (combo >= 2 && !paused) {
+      final double comboSize = combo >= 10
+          ? 12
+          : combo >= 5
+          ? 11
+          : 10;
+      final comboHot = combo >= 10 || powerStage >= 70;
+
+      _centerText(
+        canvas,
+        'COMBO x$combo',
+        Offset(size.width / 2 + 82, size.height * .735),
+        comboSize,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
+      );
+    }
     _drawStageEvent(canvas, size);
     _drawPowerStage(canvas, size);
 

@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../core/stages/stage_config.dart';
@@ -173,34 +172,6 @@ class _GameScreenState extends State<GameScreen>
         AnimationController(vsync: this, duration: const Duration(days: 1))
           ..addListener(_tick)
           ..repeat();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      if (!_gameOver && !_levelClear && !_paused) {
-        setState(() {
-          _paused = true;
-        });
-        _controller.stop();
-      }
-      return;
-    }
-
-    if (state == AppLifecycleState.resumed) {
-      if (!_gameOver && !_levelClear && _paused) {
-        _enterFullscreen();
-        setState(() {
-          // Keep the game paused after returning.
-          // The pause/play button remains available for the player.
-          _paused = true;
-        });
-      }
-    }
   }
 
   Future<void> _enterFullscreen() async {
@@ -734,25 +705,12 @@ class _GameScreenState extends State<GameScreen>
       final baseX = _movingBrickBaseX[brick]!;
       final phase = _movingBrickPhase[brick]!;
 
-      // Keep most moving bricks at the normal distance,
-      // but give some bricks a wider movement for variety.
-      final brickIndex = _bricks.indexOf(brick);
-      final wideMovement = brickIndex >= 0 && brickIndex % 3 == 0;
-
-      final amplitude = wideMovement ? .055 : .022;
+      // Slightly wider movement, still lightweight.
+      const amplitude = .022;
       const speed = 0.75;
 
       _movingBrickPhase[brick] = phase + dt * speed;
-
-      // Keep the entire brick safely inside the horizontal screen bounds.
-      const halfBrickWidth = .055;
-      final minX = halfBrickWidth;
-      final maxX = 1.0 - halfBrickWidth;
-
-      brick.x = (baseX + amplitude * sin(_movingBrickPhase[brick]!)).clamp(
-        minX,
-        maxX,
-      );
+      brick.x = baseX + amplitude * sin(_movingBrickPhase[brick]!);
     }
   }
 
@@ -1760,7 +1718,6 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _resultNavigation() {
     final isWin = _levelClear;
-    final isGameCompleted = isWin && widget.level >= 100;
     final accent = isWin ? NeonColors.cyan : NeonColors.pink;
 
     return Positioned.fill(
@@ -1804,11 +1761,7 @@ class _GameScreenState extends State<GameScreen>
                         const SizedBox(height: 6),
 
                         Text(
-                          isGameCompleted
-                              ? 'GAME COMPLETED!'
-                              : isWin
-                              ? 'LEVEL CLEAR'
-                              : 'GAME OVER',
+                          isWin ? 'LEVEL CLEAR' : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: accent,
@@ -1827,9 +1780,7 @@ class _GameScreenState extends State<GameScreen>
                         const SizedBox(height: 4),
 
                         Text(
-                          isGameCompleted
-                              ? 'CONGRATULATIONS! YOU COMPLETED ALL 100 LEVELS.'
-                              : isWin
+                          isWin
                               ? 'YOU BROKE THEM ALL'
                               : 'TRY AGAIN AND BREAK THEM ALL',
                           textAlign: TextAlign.center,
@@ -1933,44 +1884,22 @@ class _GameScreenState extends State<GameScreen>
                             const SizedBox(height: 12),
                           ],
 
-                          // Level 100 completion: no next level.
-                          if (isGameCompleted) ...[
-                            const SizedBox(height: 2),
+                          // Main progression button.
+                          _resultButton(
+                            label: 'NEXT LEVEL',
+                            icon: Icons.arrow_forward_rounded,
+                            primary: true,
+                            onPressed: _nextLevel,
+                          ),
 
-                            _resultButton(
-                              label: 'VISIT STORE FOR MORE GAMES',
-                              icon: Icons.store_rounded,
-                              primary: true,
-                              onPressed: () async {
-                                final uri = Uri.parse(
-                                  'https://ebrahassad.github.io/#apps',
-                                );
-                                await launchUrl(
-                                  uri,
-                                  mode: LaunchMode.externalApplication,
-                                );
-                              },
-                            ),
-                          ] else ...[
-                            // Main progression button.
-                            _resultButton(
-                              label: 'NEXT LEVEL',
-                              icon: Icons.arrow_forward_rounded,
-                              primary: true,
-                              onPressed: _nextLevel,
-                            ),
-                          ],
+                          const SizedBox(height: 10),
 
-                          if (!isGameCompleted) ...[
-                            const SizedBox(height: 10),
-
-                            _resultButton(
-                              label: 'REPLAY LEVEL',
-                              icon: Icons.replay_rounded,
-                              primary: false,
-                              onPressed: _restartLevel,
-                            ),
-                          ],
+                          _resultButton(
+                            label: 'REPLAY LEVEL',
+                            icon: Icons.replay_rounded,
+                            primary: false,
+                            onPressed: _restartLevel,
+                          ),
                         ] else ...[
                           if (_gameOver) ...[
                             _extraLifeCard(),
@@ -2162,7 +2091,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 child: const Icon(
                   Icons.favorite_rounded,
-                  color: NeonColors.yellow,
+                  color: NeonColors.green,
                   size: 29,
                 ),
               ),
@@ -2569,76 +2498,44 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawStageIdentity(Canvas canvas, Size size) {
-    // Keep the stage name at the existing Y=72 level.
-    // COMBO and POWER STAGE share this exact same row.
-    final stagePainter = TextPainter(
+    final titlePainter = TextPainter(
       text: TextSpan(
-        text: stageName,
+        text: 'LEVEL $level  •  $stageName',
         style: const TextStyle(
           color: Colors.white70,
           fontSize: 10,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.0,
+          letterSpacing: 1.2,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    stagePainter.paint(canvas, const Offset(14, 72));
+    titlePainter.paint(canvas, const Offset(14, 72));
 
-    // Live combo counter on the same row.
-    if (combo >= 2 && !paused) {
-      final comboSize = combo >= 10
-          ? 12.0
-          : combo >= 5
-          ? 11.0
-          : 10.0;
-
-      final comboHot = combo >= 10 || powerStage >= 70;
-
-      _centerText(
-        canvas,
-        'COMBO x$combo',
-        Offset(size.width * 0.50, 77),
-        comboSize,
-        comboHot ? NeonColors.cyan : NeonColors.yellow,
-      );
-    }
-    // Live Power Stage percentage on the same row.
-    final powerAccent = powerStageActive
-        ? NeonColors.cyan
-        : powerStage >= 70
-        ? NeonColors.yellow
-        : NeonColors.purple;
-
-    final powerText = powerStageActive
-        ? 'POWER STAGE ${powerStageTimer.ceil()}'
-        : 'POWER STAGE ${powerStage.round()}';
-
-    final powerPainter = TextPainter(
-      text: TextSpan(
-        text: powerText,
-        style: TextStyle(
-          color: powerAccent,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: .7,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    powerPainter.paint(
-      canvas,
-      Offset(size.width - powerPainter.width - 14, 72),
-    );
-
-    // Divider remains directly below this row.
     final dividerPaint = Paint()
       ..color = NeonColors.cyan.withValues(alpha: .16)
       ..strokeWidth = 1;
 
     canvas.drawLine(Offset(14, 86), Offset(size.width - 14, 86), dividerPaint);
+
+    final challengePainter = TextPainter(
+      text: TextSpan(
+        text: stageChallenge,
+        style: const TextStyle(
+          color: NeonColors.cyan,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .8,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    challengePainter.paint(
+      canvas,
+      Offset(size.width - challengePainter.width - 14, 72),
+    );
   }
 
   void _drawPowerStage(Canvas canvas, Size size) {
@@ -2697,6 +2594,16 @@ class _NeonGamePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = powerStageActive ? 2 : 1
         ..color = accent.withValues(alpha: powerStageActive ? .8 : .28),
+    );
+
+    _text(
+      canvas,
+      powerStageActive
+          ? 'POWER STAGE  ${powerStageTimer.ceil()}'
+          : 'POWER STAGE  ${powerStage.round()}%',
+      Offset(left, top + 13),
+      8,
+      accent,
     );
 
     if (powerStageAnnouncementTimer > 0 && !paused) {
@@ -2782,6 +2689,23 @@ class _NeonGamePainter extends CustomPainter {
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
 
+    // Compact COMBO beside the stage pattern name.
+    if (combo >= 2 && !paused) {
+      final double comboSize = combo >= 10
+          ? 12
+          : combo >= 5
+          ? 11
+          : 10;
+      final comboHot = combo >= 10 || powerStage >= 70;
+
+      _centerText(
+        canvas,
+        'COMBO x$combo',
+        Offset(size.width / 2 + 82, size.height * .735),
+        comboSize,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
+      );
+    }
     _drawStageEvent(canvas, size);
     _drawPowerStage(canvas, size);
 
@@ -2810,31 +2734,13 @@ class _NeonGamePainter extends CustomPainter {
     _text(canvas, 'SCORE $score', const Offset(20, 51), 11, NeonColors.cyan);
 
     if (extraLives > 0) {
-      final rewardHeartPainter = TextPainter(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '♥',
-              style: TextStyle(
-                color: NeonColors.yellow,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            TextSpan(
-              text: ' $extraLives',
-              style: TextStyle(
-                color: NeonColors.yellow,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      rewardHeartPainter.paint(canvas, Offset(size.width - 158, top));
+      _text(
+        canvas,
+        '♥ $extraLives',
+        Offset(size.width - 158, top),
+        13,
+        NeonColors.yellow,
+      );
     }
     _text(
       canvas,
