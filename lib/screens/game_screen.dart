@@ -1904,12 +1904,10 @@ class _GameScreenState extends State<GameScreen>
                                 final uri = Uri.parse(
                                   'https://ebrahassad.github.io/#apps',
                                 );
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(
-                                    uri,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                }
+                                await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
                               },
                             ),
                           ] else ...[
@@ -2530,44 +2528,77 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawStageIdentity(Canvas canvas, Size size) {
-    final titlePainter = TextPainter(
+    // Keep the stage name at the existing Y=72 level.
+    // COMBO and POWER STAGE share this exact same row.
+    final stagePainter = TextPainter(
       text: TextSpan(
-        text: 'LEVEL $level  •  $stageName',
+        text: stageName,
         style: const TextStyle(
           color: Colors.white70,
           fontSize: 10,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
+          letterSpacing: 1.0,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    titlePainter.paint(canvas, const Offset(14, 72));
+    stagePainter.paint(canvas, const Offset(14, 72));
 
+    // Live combo counter on the same row.
+    if (combo >= 2 && !paused) {
+      final comboSize = combo >= 10
+          ? 12.0
+          : combo >= 5
+          ? 11.0
+          : 10.0;
+
+      final comboHot = combo >= 10 || powerStage >= 70;
+
+      _centerText(
+        canvas,
+        'COMBO x$combo',
+        Offset(size.width * 0.50, 77),
+        comboSize,
+        comboHot ? NeonColors.cyan : NeonColors.yellow,
+      );
+    }
+
+    // Live Power Stage percentage on the same row.
+    final powerAccent = powerStageActive
+        ? NeonColors.cyan
+        : powerStage >= 70
+        ? NeonColors.yellow
+        : NeonColors.purple;
+
+    final powerText = powerStageActive
+        ? 'POWER STAGE ${powerStageTimer.ceil()}'
+        : 'POWER STAGE ${powerStage.round()}%';
+
+    final powerPainter = TextPainter(
+      text: TextSpan(
+        text: powerText,
+        style: TextStyle(
+          color: powerAccent,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: .7,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    powerPainter.paint(
+      canvas,
+      Offset(size.width - powerPainter.width - 14, 72),
+    );
+
+    // Divider remains directly below this row.
     final dividerPaint = Paint()
       ..color = NeonColors.cyan.withValues(alpha: .16)
       ..strokeWidth = 1;
 
     canvas.drawLine(Offset(14, 86), Offset(size.width - 14, 86), dividerPaint);
-
-    final challengePainter = TextPainter(
-      text: TextSpan(
-        text: stageChallenge,
-        style: const TextStyle(
-          color: NeonColors.cyan,
-          fontSize: 9,
-          fontWeight: FontWeight.w700,
-          letterSpacing: .8,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    challengePainter.paint(
-      canvas,
-      Offset(size.width - challengePainter.width - 14, 72),
-    );
   }
 
   void _drawPowerStage(Canvas canvas, Size size) {
@@ -2721,23 +2752,6 @@ class _NeonGamePainter extends CustomPainter {
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
 
-    // Compact COMBO beside the stage pattern name.
-    if (combo >= 2 && !paused) {
-      final double comboSize = combo >= 10
-          ? 12
-          : combo >= 5
-          ? 11
-          : 10;
-      final comboHot = combo >= 10 || powerStage >= 70;
-
-      _centerText(
-        canvas,
-        'COMBO x$combo',
-        Offset(size.width / 2 + 82, size.height * .735),
-        comboSize,
-        comboHot ? NeonColors.cyan : NeonColors.yellow,
-      );
-    }
     _drawStageEvent(canvas, size);
     _drawPowerStage(canvas, size);
 

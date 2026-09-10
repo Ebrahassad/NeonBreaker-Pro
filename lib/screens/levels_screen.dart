@@ -105,63 +105,13 @@ class _LevelsScreenState extends State<LevelsScreen> {
     );
   }
 
-  void _showDeveloperLevelSelector(BuildContext context) {
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('DEVELOPER LEVEL SELECTOR'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Level 1-100',
-              hintText: 'Enter level number',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('CANCEL'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final level = int.tryParse(controller.text.trim());
-
-                if (level == null || level < 1 || level > 100) {
-                  return;
-                }
-
-                Navigator.pop(dialogContext);
-                _openLevel(level);
-              },
-              child: const Text('OPEN'),
-            ),
-          ],
-        );
-      },
-    ).whenComplete(controller.dispose);
-  }
-
   @override
   Widget build(BuildContext context) {
     final save = widget.save;
     final bestLevel = save.bestLevel;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('LEVELS'),
-        actions: [
-          IconButton(
-            tooltip: 'Developer Level Selector',
-            icon: const Icon(Icons.developer_mode_rounded),
-            onPressed: () => _showDeveloperLevelSelector(context),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('LEVELS'), actions: []),
       body: Column(
         children: [
           Padding(
