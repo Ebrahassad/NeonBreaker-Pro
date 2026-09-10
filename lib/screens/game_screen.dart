@@ -37,7 +37,7 @@ class Ball {
 class Brick {
   Brick({required this.x, required this.y, required this.type, this.hp = 1});
 
-  final double x;
+  double x;
   final double y;
   final BrickType type;
   int hp;
@@ -452,12 +452,12 @@ class _GameScreenState extends State<GameScreen>
   // a little snappier than before, with a gentle per-level ramp-up.
   double _initialHorizontalSpeed() {
     // Higher base speed, but stable during the level.
-    return .62;
+    return .57;
   }
 
   double _initialVerticalSpeed() {
     // Higher base speed, but stable during the level.
-    return .98;
+    return .90;
   }
 
   double _speedMultiplier() {
@@ -473,6 +473,72 @@ class _GameScreenState extends State<GameScreen>
     return levelSpeed;
   }
 
+  // Lightweight moving-brick system.
+  // Only selected normal/empty bricks move horizontally.
+  // The movement is small and does not modify ball speed.
+  final Map<Brick, double> _movingBrickBaseX = {};
+  final Map<Brick, double> _movingBrickPhase = {};
+
+  bool _movingBricksEnabled() {
+    // Movement is introduced gradually on later stages only.
+    return widget.level >= 4;
+  }
+
+  int _movingBrickCount() {
+    final level = widget.level;
+    if (level < 4) return 0;
+    if (level < 7) return 2;
+    if (level < 12) return 3;
+    if (level < 20) return 4;
+    return 5;
+  }
+
+  void _updateMovingBricks(double dt) {
+    if (!_movingBricksEnabled()) return;
+
+    final count = _movingBrickCount();
+    if (count <= 0) return;
+
+    // Keep the selected bricks deterministic for each level.
+    final candidates = <Brick>[];
+
+    for (final brick in _bricks) {
+      if (!brick.alive) continue;
+
+      // Only ordinary/empty bricks are candidates.
+      // Special bricks are deliberately excluded.
+      final type = brick.type.toString().toLowerCase();
+      final isNormal =
+          type.contains('normal') ||
+          type.contains('empty') ||
+          type.contains('basic');
+
+      if (isNormal) {
+        candidates.add(brick);
+      }
+    }
+
+    final selected = candidates.take(count);
+
+    for (final brick in selected) {
+      _movingBrickBaseX.putIfAbsent(brick, () => brick.x);
+      _movingBrickPhase.putIfAbsent(
+        brick,
+        () => (_movingBrickBaseX[brick]! * 37.0) % 6.283185307,
+      );
+
+      final baseX = _movingBrickBaseX[brick]!;
+      final phase = _movingBrickPhase[brick]!;
+
+      // Very small horizontal movement around the original position.
+      const amplitude = .012;
+      const speed = 0.75;
+
+      _movingBrickPhase[brick] = phase + dt * speed;
+      brick.x = baseX + amplitude * sin(_movingBrickPhase[brick]!);
+    }
+  }
+
   void _tick() {
     if (!mounted || _paused || _gameOver || _levelClear) {
       return;
@@ -483,6 +549,7 @@ class _GameScreenState extends State<GameScreen>
 
     setState(() {
       _stageElapsed += dt;
+      _updateMovingBricks(dt);
       _updateTimers(dt);
       _updateBalls(dt);
       _updatePowers(dt);
@@ -683,7 +750,7 @@ class _GameScreenState extends State<GameScreen>
         : .23;
 
     // Same position as the paddle drawn on screen.
-    const paddleY = .785;
+    const paddleY = .815;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
 
@@ -733,8 +800,8 @@ class _GameScreenState extends State<GameScreen>
     const paddleHalfWidth = .09;
     const paddleHalfHeight = .015;
 
-    const leftY = .565;
-    const rightY = .675;
+    const leftY = .595;
+    const rightY = .705;
 
     bool hitPaddle(double paddleX, double paddleY) {
       final left = paddleX - paddleHalfWidth;
@@ -750,18 +817,24 @@ class _GameScreenState extends State<GameScreen>
       if (ball.vy > 0 && horizontalHit && verticalHit) {
         ball.y = paddleY - ballRadius - paddleHalfHeight;
 
+        final currentSpeed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+
         final relative = ((ball.x - paddleX) / paddleHalfWidth).clamp(
           -1.0,
           1.0,
         );
 
-        ball.vx = relative * .42;
+        ball.vx = relative * currentSpeed;
 
         if (ball.vx.abs() < .12) {
           ball.vx = ball.vx >= 0 ? .12 : -.12;
         }
 
-        ball.vy = -_initialVerticalSpeed();
+        final horizontalSpeed = ball.vx.abs();
+        final verticalSquared =
+            currentSpeed * currentSpeed - horizontalSpeed * horizontalSpeed;
+
+        ball.vy = -sqrt(verticalSquared.clamp(0.0, double.infinity));
 
         SoundService.instance.playPaddle();
         _impact(ball.x, paddleY);
@@ -938,7 +1011,7 @@ class _GameScreenState extends State<GameScreen>
     for (final power in List<FallingPower>.from(_powers)) {
       power.y += dt * .23;
 
-      const paddleY = .785;
+      const paddleY = .815;
       const paddleHalfHeight = .018;
       const powerRadius = .026;
 
@@ -2382,7 +2455,7 @@ class _NeonGamePainter extends CustomPainter {
 
       canvas.drawCircle(
         Offset(size.width / 2, size.height * .50),
-        90 + (1 - pulse) * 35,
+        65 + (1 - pulse) * 20,
         glow,
       );
 
@@ -2390,7 +2463,7 @@ class _NeonGamePainter extends CustomPainter {
         canvas,
         'POWER STAGE',
         Offset(size.width / 2, size.height * .50),
-        30 + (1 - pulse) * 8,
+        24 + (1 - pulse) * 5,
         NeonColors.cyan,
       );
 
@@ -2470,7 +2543,7 @@ class _NeonGamePainter extends CustomPainter {
       _centerText(
         canvas,
         'COMBO x$combo',
-        Offset(size.width / 2, 37),
+        Offset(size.width / 2, 76),
         comboSize,
         comboHot ? NeonColors.cyan : NeonColors.yellow,
       );
@@ -2500,27 +2573,26 @@ class _NeonGamePainter extends CustomPainter {
 
     _text(canvas, 'SCORE $score', const Offset(20, 51), 11, NeonColors.cyan);
 
-    _text(
-      canvas,
-      '♥ $lives',
-      Offset(size.width - 112, top),
-      13,
-      NeonColors.pink,
-    );
-
     if (extraLives > 0) {
       _text(
         canvas,
         '♥ $extraLives',
-        Offset(size.width - 55, top),
+        Offset(size.width - 158, top),
         13,
         NeonColors.yellow,
       );
     }
+    _text(
+      canvas,
+      '♥ $lives',
+      Offset(size.width - 100, top),
+      13,
+      NeonColors.pink,
+    );
 
     // The normal pause button remains in the top-right HUD.
     if (!paused) {
-      _iconButton(canvas, Offset(size.width - 30, 45), Icons.pause);
+      _iconButton(canvas, Offset(size.width - 28, 37), Icons.pause);
     }
 
     if (laser) {
@@ -2980,8 +3052,8 @@ class _NeonGamePainter extends CustomPainter {
       final sideHeight = size.height * .030;
 
       // Bonus paddles remain below the brick field at different heights.
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .565);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .675);
+      final leftCenter = Offset(leftPaddleX * size.width, size.height * .595);
+      final rightCenter = Offset(rightPaddleX * size.width, size.height * .705);
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
