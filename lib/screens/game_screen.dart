@@ -239,49 +239,72 @@ class _GameScreenState extends State<GameScreen>
 
     bool shouldSpawnBrick(int row, int col) {
       final center = 3.5;
-      final variant = (widget.level - 1) % 8;
-      final variantGroup = variant % 4;
-      final mirrored = variant >= 4;
+      final variant = (widget.level - 1) % 16;
+      final variantGroup = variant % 8;
+      final mirrored = variant >= 8;
 
-      // The second half of every 8-level cycle mirrors the layout,
-      // creating a genuinely different playable arrangement without
-      // changing physics, scoring, or brick rules.
       final layoutCol = mirrored ? (columns - 1 - col) : col;
       final layoutRow = mirrored ? (rows - 1 - row) : row;
       final distance = (layoutCol - center).abs();
 
       switch (pattern) {
         case StagePattern.classic:
-          if (variantGroup == 1) {
-            return layoutRow < rows - 1 || layoutCol.isEven;
+          switch (variantGroup) {
+            case 1:
+              return layoutRow < rows - 1 || layoutCol.isEven;
+            case 2:
+              return layoutRow != rows ~/ 2 || layoutCol % 3 != 0;
+            case 3:
+              return layoutRow == 0 ||
+                  layoutRow == rows - 1 ||
+                  layoutCol == 0 ||
+                  layoutCol == columns - 1 ||
+                  (layoutRow + layoutCol) % 3 == 0;
+            case 4:
+              return layoutRow % 2 == 0 ||
+                  (layoutRow == rows - 1 && layoutCol % 2 == 1);
+            case 5:
+              return layoutRow <= 1 ||
+                  layoutRow >= rows - 2 ||
+                  (layoutCol >= 2 && layoutCol <= 5);
+            case 6:
+              return (layoutRow + layoutCol) % 3 != 1;
+            case 7:
+              return layoutRow == 0 ||
+                  layoutCol == 0 ||
+                  layoutCol == columns - 1 ||
+                  (layoutRow + layoutCol) % 2 == 0;
+            default:
+              return true;
           }
-          if (variantGroup == 2) {
-            return layoutRow != rows ~/ 2 || layoutCol % 3 != 0;
-          }
-          if (variantGroup == 3) {
-            return layoutRow == 0 ||
-                layoutRow == rows - 1 ||
-                layoutCol == 0 ||
-                layoutCol == columns - 1 ||
-                (layoutRow + layoutCol) % 3 == 0;
-          }
-          return true;
 
         case StagePattern.diamond:
           final diamondRow = min(7, rows - 1);
           final base =
               layoutRow >= distance - .5 &&
               layoutRow <= diamondRow - distance + .5;
-          if (variantGroup == 1) {
-            return base && !(layoutRow == 3 && layoutCol == 3);
+
+          switch (variantGroup) {
+            case 1:
+              return base && !(layoutRow == 3 && layoutCol == 3);
+            case 2:
+              return base && (layoutRow + layoutCol) % 3 != 1;
+            case 3:
+              return base ||
+                  (layoutRow == 0 && layoutCol >= 2 && layoutCol <= 5);
+            case 4:
+              return base && layoutCol.isEven;
+            case 5:
+              return base ||
+                  (layoutRow == 1 && layoutCol >= 1 && layoutCol <= 6);
+            case 6:
+              return base && layoutRow != rows ~/ 2;
+            case 7:
+              return base ||
+                  (layoutRow == rows - 1 && layoutCol >= 2 && layoutCol <= 5);
+            default:
+              return base;
           }
-          if (variantGroup == 2) {
-            return base && (layoutRow + layoutCol) % 3 != 1;
-          }
-          if (variantGroup == 3) {
-            return base || (layoutRow == 0 && layoutCol >= 2 && layoutCol <= 5);
-          }
-          return base;
 
         case StagePattern.fortress:
           final wall =
@@ -289,72 +312,119 @@ class _GameScreenState extends State<GameScreen>
               layoutRow == rows - 1 ||
               layoutCol == 0 ||
               layoutCol == columns - 1;
-          if (variantGroup == 1) {
-            return wall || (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
+
+          switch (variantGroup) {
+            case 1:
+              return wall ||
+                  (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
+            case 2:
+              return wall ||
+                  (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            case 3:
+              return wall ||
+                  (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5) ||
+                  (layoutRow == rows - 3 && layoutCol >= 2 && layoutCol <= 5);
+            case 4:
+              return wall || layoutRow == rows ~/ 2;
+            case 5:
+              return wall || (layoutCol == 2 || layoutCol == 5);
+            case 6:
+              return wall || (layoutRow == 2 || layoutRow == rows - 3);
+            case 7:
+              return wall || (layoutRow == rows ~/ 2 && layoutCol.isEven);
+            default:
+              return wall ||
+                  (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
           }
-          if (variantGroup == 2) {
-            return wall ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
-          }
-          if (variantGroup == 3) {
-            return wall ||
-                (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5) ||
-                (layoutRow == rows - 3 && layoutCol >= 2 && layoutCol <= 5);
-          }
-          return wall || (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
 
         case StagePattern.checker:
-          if (variantGroup == 1) {
-            return (layoutRow + layoutCol) % 2 == 0 && layoutRow != rows - 1;
+          switch (variantGroup) {
+            case 1:
+              return (layoutRow + layoutCol) % 2 == 0 && layoutRow != rows - 1;
+            case 2:
+              return (layoutRow + layoutCol) % 2 == 0 || layoutRow == rows ~/ 2;
+            case 3:
+              return (layoutRow + layoutCol) % 2 == 0 &&
+                  layoutCol != 3 &&
+                  layoutCol != 4;
+            case 4:
+              return (layoutRow + layoutCol) % 2 == 0 && layoutRow != 0;
+            case 5:
+              return (layoutRow + layoutCol) % 2 == 0 ||
+                  layoutRow == 1 ||
+                  layoutRow == rows - 2;
+            case 6:
+              return (layoutRow + layoutCol) % 2 == 0 && layoutCol % 3 != 0;
+            case 7:
+              return (layoutRow + layoutCol) % 2 == 0 ||
+                  layoutCol == columns ~/ 2;
+            default:
+              return (layoutRow + layoutCol) % 2 == 0;
           }
-          if (variantGroup == 2) {
-            return (layoutRow + layoutCol) % 2 == 0 || layoutRow == rows ~/ 2;
-          }
-          if (variantGroup == 3) {
-            return (layoutRow + layoutCol) % 2 == 0 &&
-                layoutCol != 3 &&
-                layoutCol != 4;
-          }
-          return (layoutRow + layoutCol) % 2 == 0;
 
         case StagePattern.pyramid:
           final width = min(columns, 2 + row * 2);
           final left = (columns - width) ~/ 2;
           final inside = layoutCol >= left && layoutCol < left + width;
-          if (variantGroup == 1) {
-            return inside &&
-                !(layoutRow == rows - 1 && layoutCol > 1 && layoutCol < 6);
+
+          switch (variantGroup) {
+            case 1:
+              return inside &&
+                  !(layoutRow == rows - 1 && layoutCol > 1 && layoutCol < 6);
+            case 2:
+              return inside && (layoutRow + layoutCol) % 3 != 1;
+            case 3:
+              return inside ||
+                  (layoutRow == 0 && layoutCol >= 3 && layoutCol <= 4);
+            case 4:
+              return inside && layoutCol.isEven;
+            case 5:
+              return inside || layoutRow == rows ~/ 2;
+            case 6:
+              return inside && layoutRow != rows - 1;
+            case 7:
+              return inside ||
+                  (layoutRow == 0 && layoutCol == 0) ||
+                  (layoutRow == 0 && layoutCol == columns - 1);
+            default:
+              return inside;
           }
-          if (variantGroup == 2) {
-            return inside && (layoutRow + layoutCol) % 3 != 1;
-          }
-          if (variantGroup == 3) {
-            return inside ||
-                (layoutRow == 0 && layoutCol >= 3 && layoutCol <= 4);
-          }
-          return inside;
 
         case StagePattern.cross:
           final vertical =
               layoutCol == columns ~/ 2 || layoutCol == columns ~/ 2 - 1;
           final horizontal = layoutRow == rows ~/ 2;
-          if (variantGroup == 1) {
-            return vertical || horizontal || layoutRow == 1;
+
+          switch (variantGroup) {
+            case 1:
+              return vertical || horizontal || layoutRow == 1;
+            case 2:
+              return vertical ||
+                  horizontal ||
+                  (layoutRow == rows ~/ 2 - 2 &&
+                      layoutCol >= 2 &&
+                      layoutCol <= 5);
+            case 3:
+              return vertical ||
+                  horizontal ||
+                  layoutRow == 0 ||
+                  layoutRow == rows - 1;
+            case 4:
+              return vertical ||
+                  horizontal ||
+                  layoutCol == 1 ||
+                  layoutCol == columns - 2;
+            case 5:
+              return vertical ||
+                  horizontal ||
+                  (layoutRow == 1 && layoutCol >= 2 && layoutCol <= 5);
+            case 6:
+              return vertical || horizontal || layoutRow == rows ~/ 2 - 1;
+            case 7:
+              return vertical || horizontal || layoutRow == rows ~/ 2 + 1;
+            default:
+              return vertical || horizontal;
           }
-          if (variantGroup == 2) {
-            return vertical ||
-                horizontal ||
-                (layoutRow == rows ~/ 2 - 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5);
-          }
-          if (variantGroup == 3) {
-            return vertical ||
-                horizontal ||
-                layoutRow == 0 ||
-                layoutRow == rows - 1;
-          }
-          return vertical || horizontal;
 
         case StagePattern.tunnel:
           final outer =
@@ -362,18 +432,27 @@ class _GameScreenState extends State<GameScreen>
               layoutRow >= rows - 2 ||
               layoutCol == 0 ||
               layoutCol == columns - 1;
-          if (variantGroup == 1) {
-            return outer ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+
+          switch (variantGroup) {
+            case 1:
+              return outer ||
+                  (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            case 2:
+              return outer || layoutCol == 3 || layoutCol == 4;
+            case 3:
+              return outer ||
+                  (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
+            case 4:
+              return outer || layoutRow == 2 || layoutRow == rows - 3;
+            case 5:
+              return outer || layoutCol == 2 || layoutCol == 5;
+            case 6:
+              return outer || (layoutRow + layoutCol) % 3 == 0;
+            case 7:
+              return outer || layoutRow == rows ~/ 2;
+            default:
+              return outer;
           }
-          if (variantGroup == 2) {
-            return outer || layoutCol == 3 || layoutCol == 4;
-          }
-          if (variantGroup == 3) {
-            return outer ||
-                (layoutRow == rows ~/ 2 && layoutCol >= 2 && layoutCol <= 5);
-          }
-          return outer;
 
         case StagePattern.boss:
           final frame =
@@ -382,25 +461,34 @@ class _GameScreenState extends State<GameScreen>
               layoutRow == rows ~/ 2 ||
               layoutCol == 0 ||
               layoutCol == columns - 1;
-          if (variantGroup == 1) {
-            return frame ||
-                (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
+
+          switch (variantGroup) {
+            case 1:
+              return frame ||
+                  (layoutRow == 2 && layoutCol >= 2 && layoutCol <= 5);
+            case 2:
+              return frame ||
+                  (layoutRow == rows ~/ 2 - 2 &&
+                      layoutCol >= 2 &&
+                      layoutCol <= 5) ||
+                  (layoutRow == rows ~/ 2 + 2 &&
+                      layoutCol >= 2 &&
+                      layoutCol <= 5);
+            case 3:
+              return frame ||
+                  (layoutRow == 2 && (layoutCol == 2 || layoutCol == 5)) ||
+                  (layoutRow == rows - 3 && (layoutCol == 2 || layoutCol == 5));
+            case 4:
+              return frame || layoutCol == 2 || layoutCol == 5;
+            case 5:
+              return frame || layoutRow == 2 || layoutRow == rows - 3;
+            case 6:
+              return frame || (layoutRow + layoutCol) % 3 == 0;
+            case 7:
+              return frame || (layoutRow == rows ~/ 2 - 2 && layoutCol.isEven);
+            default:
+              return frame;
           }
-          if (variantGroup == 2) {
-            return frame ||
-                (layoutRow == rows ~/ 2 - 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5) ||
-                (layoutRow == rows ~/ 2 + 2 &&
-                    layoutCol >= 2 &&
-                    layoutCol <= 5);
-          }
-          if (variantGroup == 3) {
-            return frame ||
-                (layoutRow == 2 && (layoutCol == 2 || layoutCol == 5)) ||
-                (layoutRow == rows - 3 && (layoutCol == 2 || layoutCol == 5));
-          }
-          return frame;
       }
     }
 
@@ -518,7 +606,35 @@ class _GameScreenState extends State<GameScreen>
       }
     }
 
-    final selected = candidates.take(count);
+    // Select moving bricks from different rows when possible.
+    // Deterministic selection keeps gameplay stable and lightweight.
+    final byRow = <int, List<Brick>>{};
+    for (final brick in candidates) {
+      final row = ((brick.y - .105) / .055).round();
+      (byRow[row] ??= <Brick>[]).add(brick);
+    }
+
+    final selected = <Brick>[];
+    final rows = byRow.keys.toList()..sort();
+
+    // First pass: one brick from each different row.
+    for (final row in rows) {
+      if (selected.length >= count) break;
+      final list = byRow[row]!;
+      if (list.isNotEmpty) {
+        selected.add(list[(widget.level + row) % list.length]);
+      }
+    }
+
+    // Fallback only if there are fewer rows than requested bricks.
+    if (selected.length < count) {
+      for (final brick in candidates) {
+        if (selected.length >= count) break;
+        if (!selected.contains(brick)) {
+          selected.add(brick);
+        }
+      }
+    }
 
     for (final brick in selected) {
       _movingBrickBaseX.putIfAbsent(brick, () => brick.x);
@@ -530,8 +646,8 @@ class _GameScreenState extends State<GameScreen>
       final baseX = _movingBrickBaseX[brick]!;
       final phase = _movingBrickPhase[brick]!;
 
-      // Very small horizontal movement around the original position.
-      const amplitude = .012;
+      // Slightly wider movement, still lightweight.
+      const amplitude = .022;
       const speed = 0.75;
 
       _movingBrickPhase[brick] = phase + dt * speed;
@@ -750,7 +866,7 @@ class _GameScreenState extends State<GameScreen>
         : .23;
 
     // Same position as the paddle drawn on screen.
-    const paddleY = .815;
+    const paddleY = .835;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
 
@@ -800,8 +916,8 @@ class _GameScreenState extends State<GameScreen>
     const paddleHalfWidth = .09;
     const paddleHalfHeight = .015;
 
-    const leftY = .595;
-    const rightY = .705;
+    const leftY = .615;
+    const rightY = .725;
 
     bool hitPaddle(double paddleX, double paddleY) {
       final left = paddleX - paddleHalfWidth;
@@ -818,24 +934,9 @@ class _GameScreenState extends State<GameScreen>
         ball.y = paddleY - ballRadius - paddleHalfHeight;
 
         final currentSpeed = sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-
-        final relative = ((ball.x - paddleX) / paddleHalfWidth).clamp(
-          -1.0,
-          1.0,
-        );
-
-        ball.vx = relative * currentSpeed;
-
-        if (ball.vx.abs() < .12) {
-          ball.vx = ball.vx >= 0 ? .12 : -.12;
-        }
-
-        final horizontalSpeed = ball.vx.abs();
-        final verticalSquared =
-            currentSpeed * currentSpeed - horizontalSpeed * horizontalSpeed;
-
-        ball.vy = -sqrt(verticalSquared.clamp(0.0, double.infinity));
-
+        // Extra paddles: vertical bounce only.
+        ball.vx = 0.0;
+        ball.vy = -currentSpeed;
         SoundService.instance.playPaddle();
         _impact(ball.x, paddleY);
         _addSparks(ball.x, paddleY, 10);
@@ -1011,7 +1112,7 @@ class _GameScreenState extends State<GameScreen>
     for (final power in List<FallingPower>.from(_powers)) {
       power.y += dt * .23;
 
-      const paddleY = .815;
+      const paddleY = .835;
       const paddleHalfHeight = .018;
       const powerRadius = .026;
 
@@ -2533,17 +2634,15 @@ class _NeonGamePainter extends CustomPainter {
 
     if (combo >= 2 && !paused) {
       final double comboSize = combo >= 10
-          ? 21
+          ? 12
           : combo >= 5
-          ? 19.5
-          : 18;
-
+          ? 11
+          : 10;
       final comboHot = combo >= 10 || powerStage >= 70;
-
       _centerText(
         canvas,
         'COMBO x$combo',
-        Offset(size.width / 2, 76),
+        Offset(size.width / 2, 30),
         comboSize,
         comboHot ? NeonColors.cyan : NeonColors.yellow,
       );
@@ -3052,8 +3151,8 @@ class _NeonGamePainter extends CustomPainter {
       final sideHeight = size.height * .030;
 
       // Bonus paddles remain below the brick field at different heights.
-      final leftCenter = Offset(leftPaddleX * size.width, size.height * .595);
-      final rightCenter = Offset(rightPaddleX * size.width, size.height * .705);
+      final leftCenter = Offset(leftPaddleX * size.width, size.height * .615);
+      final rightCenter = Offset(rightPaddleX * size.width, size.height * .725);
       void drawNeonPaddle(Offset c, Color color, double scale) {
         final w = sideWidth * scale;
         final h = sideHeight;
