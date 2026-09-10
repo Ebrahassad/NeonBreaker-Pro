@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../core/stages/stage_config.dart';
@@ -35,12 +36,19 @@ class Ball {
 }
 
 class Brick {
-  Brick({required this.x, required this.y, required this.type, this.hp = 1});
+  Brick({
+    required this.x,
+    required this.y,
+    required this.type,
+    this.hp = 1,
+    this.monster = false,
+  });
 
   double x;
   final double y;
   final BrickType type;
   int hp;
+  bool monster;
   bool alive = true;
   bool flashing = false;
 }
@@ -492,6 +500,41 @@ class _GameScreenState extends State<GameScreen>
       }
     }
 
+    // Monster bricks are tougher normal bricks used only on advanced stages.
+    // They are limited to 10 and are distributed across different rows.
+    final monsterTarget = widget.level < 11
+        ? 0
+        : min(10, 2 + (widget.level - 11) ~/ 5);
+
+    final monsterPositions = <String>{};
+
+    if (monsterTarget > 0) {
+      final possibleRows = List<int>.generate(rows, (i) => i);
+
+      // Deterministic row distribution: prefer different rows first.
+      for (final row in possibleRows) {
+        if (monsterPositions.length >= monsterTarget) break;
+
+        final preferredCol = (widget.level * 3 + row * 5) % columns;
+
+        final key = '$row:$preferredCol';
+        monsterPositions.add(key);
+      }
+
+      // Fill remaining positions only if necessary.
+      for (int row = 0; row < rows; row++) {
+        for (int col = 0; col < columns; col++) {
+          if (monsterPositions.length >= monsterTarget) break;
+
+          final key = '$row:$col';
+          if (!monsterPositions.contains(key)) {
+            monsterPositions.add(key);
+          }
+        }
+        if (monsterPositions.length >= monsterTarget) break;
+      }
+    }
+
     for (int row = 0; row < rows; row++) {
       for (int col = 0; col < columns; col++) {
         if (!shouldSpawnBrick(row, col)) {
@@ -523,10 +566,27 @@ class _GameScreenState extends State<GameScreen>
           type = BrickType.steel;
         }
 
-        final hp = type == BrickType.steel ? 2 + widget.level ~/ 5 : 1;
+        // Monster bricks are always normal-type bricks.
+        // Steel bricks keep their existing numbers and behavior.
+        final isMonster =
+            type == BrickType.normal && monsterPositions.contains('$row:$col');
+
+        final monsterHp = min(4, 2 + ((widget.level - 11).clamp(0, 100) ~/ 15));
+
+        final hp = type == BrickType.steel
+            ? 2 + widget.level ~/ 5
+            : isMonster
+            ? monsterHp
+            : 1;
 
         _bricks.add(
-          Brick(x: .065 + col * .125, y: .105 + row * .055, type: type, hp: hp),
+          Brick(
+            x: .065 + col * .125,
+            y: .105 + row * .055,
+            type: type,
+            hp: hp,
+            monster: isMonster,
+          ),
         );
       }
     }
@@ -866,7 +926,7 @@ class _GameScreenState extends State<GameScreen>
         : .23;
 
     // Same position as the paddle drawn on screen.
-    const paddleY = .835;
+    const paddleY = .890;
     const paddleHalfHeight = .018;
     const ballRadius = .026;
 
@@ -1112,7 +1172,7 @@ class _GameScreenState extends State<GameScreen>
     for (final power in List<FallingPower>.from(_powers)) {
       power.y += dt * .23;
 
-      const paddleY = .835;
+      const paddleY = .890;
       const paddleHalfHeight = .018;
       const powerRadius = .026;
 
@@ -1659,6 +1719,7 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _resultNavigation() {
     final isWin = _levelClear;
+    final isGameCompleted = isWin && widget.level >= 100;
     final accent = isWin ? NeonColors.cyan : NeonColors.pink;
 
     return Positioned.fill(
@@ -1702,7 +1763,11 @@ class _GameScreenState extends State<GameScreen>
                         const SizedBox(height: 6),
 
                         Text(
-                          isWin ? 'LEVEL CLEAR' : 'GAME OVER',
+                          isGameCompleted
+                              ? 'GAME COMPLETED!'
+                              : isWin
+                              ? 'LEVEL CLEAR'
+                              : 'GAME OVER',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: accent,
@@ -1721,7 +1786,9 @@ class _GameScreenState extends State<GameScreen>
                         const SizedBox(height: 4),
 
                         Text(
-                          isWin
+                          isGameCompleted
+                              ? 'CONGRATULATIONS! YOU COMPLETED ALL 100 LEVELS.'
+                              : isWin
                               ? 'YOU BROKE THEM ALL'
                               : 'TRY AGAIN AND BREAK THEM ALL',
                           textAlign: TextAlign.center,
@@ -1825,22 +1892,46 @@ class _GameScreenState extends State<GameScreen>
                             const SizedBox(height: 12),
                           ],
 
-                          // Main progression button.
-                          _resultButton(
-                            label: 'NEXT LEVEL',
-                            icon: Icons.arrow_forward_rounded,
-                            primary: true,
-                            onPressed: _nextLevel,
-                          ),
+                          // Level 100 completion: no next level.
+                          if (isGameCompleted) ...[
+                            const SizedBox(height: 2),
 
-                          const SizedBox(height: 10),
+                            _resultButton(
+                              label: 'VISIT STORE FOR MORE GAMES',
+                              icon: Icons.store_rounded,
+                              primary: true,
+                              onPressed: () async {
+                                final uri = Uri.parse(
+                                  'https://ebrahassad.github.io/#apps',
+                                );
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              },
+                            ),
+                          ] else ...[
+                            // Main progression button.
+                            _resultButton(
+                              label: 'NEXT LEVEL',
+                              icon: Icons.arrow_forward_rounded,
+                              primary: true,
+                              onPressed: _nextLevel,
+                            ),
+                          ],
 
-                          _resultButton(
-                            label: 'REPLAY LEVEL',
-                            icon: Icons.replay_rounded,
-                            primary: false,
-                            onPressed: _restartLevel,
-                          ),
+                          if (!isGameCompleted) ...[
+                            const SizedBox(height: 10),
+
+                            _resultButton(
+                              label: 'REPLAY LEVEL',
+                              icon: Icons.replay_rounded,
+                              primary: false,
+                              onPressed: _restartLevel,
+                            ),
+                          ],
                         ] else ...[
                           if (_gameOver) ...[
                             _extraLifeCard(),
@@ -2629,9 +2720,8 @@ class _NeonGamePainter extends CustomPainter {
 
   void _drawHud(Canvas canvas, Size size) {
     _drawStageIdentity(canvas, size);
-    _drawStageEvent(canvas, size);
-    _drawPowerStage(canvas, size);
 
+    // Compact COMBO beside the stage pattern name.
     if (combo >= 2 && !paused) {
       final double comboSize = combo >= 10
           ? 12
@@ -2639,14 +2729,17 @@ class _NeonGamePainter extends CustomPainter {
           ? 11
           : 10;
       final comboHot = combo >= 10 || powerStage >= 70;
+
       _centerText(
         canvas,
         'COMBO x$combo',
-        Offset(size.width / 2, 30),
+        Offset(size.width / 2 + 82, size.height * .735),
         comboSize,
         comboHot ? NeonColors.cyan : NeonColors.yellow,
       );
     }
+    _drawStageEvent(canvas, size);
+    _drawPowerStage(canvas, size);
 
     const double top = 30;
 
@@ -2673,13 +2766,31 @@ class _NeonGamePainter extends CustomPainter {
     _text(canvas, 'SCORE $score', const Offset(20, 51), 11, NeonColors.cyan);
 
     if (extraLives > 0) {
-      _text(
-        canvas,
-        '♥ $extraLives',
-        Offset(size.width - 158, top),
-        13,
-        NeonColors.yellow,
-      );
+      final rewardHeartPainter = TextPainter(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '♥',
+              style: TextStyle(
+                color: NeonColors.yellow,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            TextSpan(
+              text: ' $extraLives',
+              style: TextStyle(
+                color: NeonColors.yellow,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      rewardHeartPainter.paint(canvas, Offset(size.width - 158, top));
     }
     _text(
       canvas,
@@ -2806,33 +2917,37 @@ class _NeonGamePainter extends CustomPainter {
       // ----------------------------------------------------------
       // TYPE-SPECIFIC DESIGN
       // ----------------------------------------------------------
-      switch (brick.type) {
-        case BrickType.normal:
-          // Small central glass core.
-          canvas.drawCircle(
-            center,
-            min(width, height) * .13,
-            Paint()..color = color.withValues(alpha: .18),
-          );
+      if (brick.monster) {
+        _drawMonsterBrickIcon(canvas, center, min(width, height), color);
+      } else {
+        switch (brick.type) {
+          case BrickType.normal:
+            // Small central glass core.
+            canvas.drawCircle(
+              center,
+              min(width, height) * .13,
+              Paint()..color = color.withValues(alpha: .18),
+            );
 
-          canvas.drawCircle(
-            center,
-            min(width, height) * .055,
-            Paint()..color = Colors.white.withValues(alpha: .75),
-          );
-          break;
+            canvas.drawCircle(
+              center,
+              min(width, height) * .055,
+              Paint()..color = Colors.white.withValues(alpha: .75),
+            );
+            break;
 
-        case BrickType.explosive:
-          _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
-          break;
+          case BrickType.explosive:
+            _drawExplosiveBrickIcon(canvas, center, min(width, height), color);
+            break;
 
-        case BrickType.steel:
-          _drawSteelBrickIcon(canvas, center, min(width, height), brick.hp);
-          break;
+          case BrickType.steel:
+            _drawSteelBrickIcon(canvas, center, min(width, height), brick.hp);
+            break;
 
-        case BrickType.bonus:
-          _drawBonusBrickIcon(canvas, center, min(width, height));
-          break;
+          case BrickType.bonus:
+            _drawBonusBrickIcon(canvas, center, min(width, height));
+            break;
+        }
       }
 
       // ----------------------------------------------------------
@@ -2847,6 +2962,86 @@ class _NeonGamePainter extends CustomPainter {
         );
       }
     }
+  }
+
+  void _drawMonsterBrickIcon(
+    Canvas canvas,
+    Offset center,
+    double size,
+    Color color,
+  ) {
+    final headRadius = size * .27;
+
+    final headPaint = Paint()..color = color.withValues(alpha: .92);
+
+    canvas.drawCircle(center, headRadius, headPaint);
+
+    // Small horns.
+    final hornPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .9)
+      ..style = PaintingStyle.fill;
+
+    final leftHorn = Path()
+      ..moveTo(center.dx - headRadius * .72, center.dy - headRadius * .45)
+      ..lineTo(center.dx - headRadius * .98, center.dy - headRadius * 1.05)
+      ..lineTo(center.dx - headRadius * .25, center.dy - headRadius * .70)
+      ..close();
+
+    final rightHorn = Path()
+      ..moveTo(center.dx + headRadius * .72, center.dy - headRadius * .45)
+      ..lineTo(center.dx + headRadius * .98, center.dy - headRadius * 1.05)
+      ..lineTo(center.dx + headRadius * .25, center.dy - headRadius * .70)
+      ..close();
+
+    canvas.drawPath(leftHorn, hornPaint);
+    canvas.drawPath(rightHorn, hornPaint);
+
+    // Eyes.
+    final eyePaint = Paint()..color = Colors.white;
+
+    canvas.drawCircle(
+      Offset(center.dx - headRadius * .38, center.dy - headRadius * .10),
+      headRadius * .16,
+      eyePaint,
+    );
+
+    canvas.drawCircle(
+      Offset(center.dx + headRadius * .38, center.dy - headRadius * .10),
+      headRadius * .16,
+      eyePaint,
+    );
+
+    final pupilPaint = Paint()..color = Colors.black;
+
+    canvas.drawCircle(
+      Offset(center.dx - headRadius * .38, center.dy - headRadius * .10),
+      headRadius * .075,
+      pupilPaint,
+    );
+
+    canvas.drawCircle(
+      Offset(center.dx + headRadius * .38, center.dy - headRadius * .10),
+      headRadius * .075,
+      pupilPaint,
+    );
+
+    // Simple angry mouth.
+    final mouthPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    final mouth = Path()
+      ..moveTo(center.dx - headRadius * .38, center.dy + headRadius * .35)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + headRadius * .55,
+        center.dx + headRadius * .38,
+        center.dy + headRadius * .35,
+      );
+
+    canvas.drawPath(mouth, mouthPaint);
   }
 
   void _drawExplosiveBrickIcon(
@@ -3045,7 +3240,7 @@ class _NeonGamePainter extends CustomPainter {
   }
 
   void _drawPaddle(Canvas canvas, Size size) {
-    final center = Offset(paddle * size.width, size.height * .785);
+    final center = Offset(paddle * size.width, size.height * .890);
 
     final width = powerStageActive
         ? size.width * .70
